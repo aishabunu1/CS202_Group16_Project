@@ -1,68 +1,80 @@
-Project Structure: 
-CS202_Group16_Project/
-│
-├── static/                           # Static files
-│   ├── css/
-│   │   ├── style.css                 # Main styles
-│   │   └── responsive.css            # Mobile styles (optional)
-│   │
-│   ├── js/
-│   │   ├── cart.js                   # Cart functionality
-│   │   └── search.js                 # Live search (optional)
-│   │
-│   └── images/                       # Menu item images
-│       ├── kebap1.jpg                # Sample images (add all 15+)
-│       └── pizza1.jpg
-│
-├── templates/                        # All HTML templates
-│   ├── auth/
-│   │   ├── login.html                # DONE (provided)
-│   │   └── register.html             # DONE (provided)
-│   │
-│   ├── customer/
-│   │   ├── dashboard.html            # Restaurant listings
-│   │   ├── restaurants.html          # Search results
-│   │   ├── menu.html                 # Menu with add-to-cart
-│   │   ├── cart.html                 # Order summary
-│   │   ├── orders.html               # Order history
-│   │   └── rate.html                 # Rating form
-│   │
-│   ├── manager/
-│   │   ├── dashboard.html            # Restaurant overview
-│   │   ├── menu.html                 # Menu management
-│   │   ├── orders.html               # Order status
-│   │   └── statistics.html           # Sales analytics
-│   │
-│   ├── base.html                     # DONE (provided)
-│   └── 404.html                      # Error page (optional)
-│
-├── database/
-│   ├── db_connection.py              # DONE (provided)
-│   └── triggers.sql                  # Discount/rating validation
-│
-├── models/                           # Database operations
-│   ├── user.py                       # DONE (provided)
-│   ├── restaurant.py                 # DONE (provided)
-│   ├── menu.py                       # DONE (provided)
-│   ├── order.py                      # DONE (provided)
-│   └── rating.py                     # DONE (provided)
-│
-├── utils/                            # Helper functions
-│   ├── auth.py                       # DONE (provided)
-│   └── helpers.py                    # DONE (provided)
-│
-├── requirements.txt                  # DONE (provided)
-├── app.py                            # DONE (provided)
-│
-├── reports/                          # Project documentation
-│   ├── Part1_Report.pdf              # Your submitted Part 1
-│   └── Part2_Report.pdf              # New report with:
-│       - Work division
-│       - Screenshots
-│       - Demo explanation
-│
-├── sql/                              # Database files
-│   ├── OnlineFoodOrderingSystemDDL.sql  # DONE (provided)
-│   └── OnlineFoodOrderingSystemDML.sql  # DONE (provided)
-│
-└── README.md                         # Setup instructions
+# CS202 Online Food Ordering System
+
+## Setup Guide (For All Team Members)
+
+### Prerequisites
+1. **Python 3.8+**: [Download Python](https://www.python.org/downloads/)
+   - During installation:
+     - Check "Add Python to PATH"
+     - Select "Custom installation"
+     - Enable "pip" and "for all users"
+
+2. **MySQL**(we have already done this): [Download MySQL](https://dev.mysql.com/downloads/installer/)
+   - Remember your root password
+   - Install MySQL Workbench (optional but recommended)
+
+3. **VS Code**: [Download VS Code](https://code.visualstudio.com/)
+
+### Step 1: Clone the Repository
+```bash
+git clone https://github.com/yourusername/CS202_Group16_Project.git
+cd CS202_Group16_Project
+
+### Step 2: 
+Execute the DDL and DML scripts:
+File > Open SQL Script > Select sql/OnlineFoodOrderingSystemDDL.sql > Run
+Repeat for OnlineFoodOrderingSystemDML.sql
+
+###Step 3: Install Dependencies
+run in vscode terminal: python -m pip install -r requirements.txt
+
+###Step 4: Run the application
+run : python app.py
+Access the site at: http://localhost:5000
+
+
+Common Errors & Solutions
+1. "ModuleNotFoundError: No module named 'flask'"
+bash
+# Reinstall dependencies
+python -m pip uninstall flask mysql-connector-python
+python -m pip install flask==2.1.3 mysql-connector-python==8.0.26
+
+2. MySQL Connection Errors
+Verify MySQL service is running (Windows: Services > MySQL)
+
+Check credentials in db_connection.py
+
+Test connection in MySQL Workbench first
+
+3. "TemplateNotFound" Errors
+Ensure all template files are in the exact templates/ folder
+
+Case-sensitive names:
+
+templates/auth/login.html ✅
+
+Templates/Auth/Login.html ❌
+
+4. Git Push Rejected
+bash
+git pull origin main
+# Resolve any merge conflicts, then:
+git push origin main
+
+5. "Python not found" on Windows
+Disable Microsoft Store alias:
+
+Windows Search > "App Execution Aliases"
+
+Turn off "Python" and "Python3" shortcuts
+
+Reinstall Python with PATH enabled
+
+First-Time Test
+Register as a customer at http://localhost:5000/register
+
+For Managers
+Register as "restaurant_manager" account type
+
+Access manager dashboard at http://localhost:5000/manager/dashboard

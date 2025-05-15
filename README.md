@@ -19,25 +19,35 @@
 ```bash
 git clone https://github.com/yourusername/CS202_Group16_Project.git
 cd CS202_Group16_Project
+```
 
-### **Step 2: Execute the DDL and DML scripts **
+### Step 2: Execute the DDL and DML scripts 
 File > Open SQL Script > Select sql/OnlineFoodOrderingSystemDDL.sql > Run
 Repeat for OnlineFoodOrderingSystemDML.sql
 
-###Step 3: Install Dependencies
-run in vscode terminal: python -m pip install -r requirements.txt
+### Step 3: Install Dependencies
+run in vscode terminal:
+```bash
+python -m pip install -r requirements.txt
+```
 
-###Step 4: Run the application
-run : python app.py
-Access the site at: http://localhost:5000
+### Step 4: Run the application
+run :
+```bash
+python app.py
+```
+Access the site at: 
+http://localhost:5000
 
 
 Common Errors & Solutions
 1. "ModuleNotFoundError: No module named 'flask'"
 bash
 # Reinstall dependencies
+```bash
 python -m pip uninstall flask mysql-connector-python
 python -m pip install flask==2.1.3 mysql-connector-python==8.0.26
+```
 
 2. MySQL Connection Errors
 Verify MySQL service is running (Windows: Services > MySQL)

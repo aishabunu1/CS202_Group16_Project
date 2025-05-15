@@ -20,8 +20,7 @@
 git clone https://github.com/yourusername/CS202_Group16_Project.git
 cd CS202_Group16_Project
 
-### Step 2: 
-Execute the DDL and DML scripts:
+### **Step 2: Execute the DDL and DML scripts **
 File > Open SQL Script > Select sql/OnlineFoodOrderingSystemDDL.sql > Run
 Repeat for OnlineFoodOrderingSystemDML.sql
 

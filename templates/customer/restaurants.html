@@ -1,0 +1,28 @@
+{% extends 'customer/layout.html' %}
+{% block title %}Search Results{% endblock %}
+{% block content %}
+<div class="container my-4">
+  <h1 class="mb-4">Results for "{{ request.args.get('q', '') }}"</h1>
+  <a href="{{ url_for('customer_dashboard') }}" class="btn btn-link mb-3">&larr; Back to all</a>
+
+  <div class="row">
+    {% for r in restaurants %}
+      <div class="col-md-4 mb-4">
+        <div class="card h-100">
+          <img src="{{ r.image_url or url_for('static', filename='images/default-restaurant.jpg') }}"
+               class="card-img-top" alt="{{ r.name }}">
+          <div class="card-body d-flex flex-column">
+            <h5 class="card-title">{{ r.name }}</h5>
+            <p class="card-text">{{ r.cuisine }} • {{ r.address }}</p>
+            <a href="{{ url_for('customer_menu', restaurant_id=r.restaurant_id) }}" class="btn btn-sm btn-outline-primary mt-auto">
+              View Menu
+            </a>
+          </div>
+        </div>
+      </div>
+    {% else %}
+      <p class="text-muted">No matches found.</p>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}

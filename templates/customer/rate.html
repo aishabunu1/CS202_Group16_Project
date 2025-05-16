@@ -1,0 +1,27 @@
+{% extends 'customer/layout.html' %}
+{% block title %}Rate Your Order{% endblock %}
+{% block content %}
+<div class="container my-4">
+  <h1 class="mb-4">Rate Order #{{ order.id }}</h1>
+
+  <form method="post" action="{{ url_for('customer.submit_rating', order_id=order.id) }}">
+    <div class="mb-3">
+      <label for="rating" class="form-label">Your Rating</label>
+      <select class="form-select" id="rating" name="rating" required>
+        <option value="">Choose…</option>
+        {% for i in range(1, 6) %}
+          <option value="{{ i }}">{{ i }} star{{ 's' if i>1 }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div class="mb-3">
+      <label for="comments" class="form-label">Comments (optional)</label>
+      <textarea class="form-control" id="comments" name="comments" rows="3"></textarea>
+    </div>
+
+    <button type="submit" class="btn btn-primary">Submit Rating</button>
+    <a href="{{ url_for('customer_orders') }}" class="btn btn-link">Back to Orders</a>
+  </form>
+</div>
+{% endblock %}

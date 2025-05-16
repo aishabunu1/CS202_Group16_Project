@@ -1,0 +1,44 @@
+{% extends 'customer/layout.html' %}
+{% block title %}Your Cart{% endblock %}
+{% block content %}
+<div class="container my-4">
+  <h1 class="mb-4">Order Summary</h1>
+  {% if cart_items %}
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Item</th>
+          <th>Qty</th>
+          <th>Price</th>
+          <th>Total</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for ci in cart_items %}
+          <tr>
+            <td>{{ ci.item.name }}</td>
+            <td>{{ ci.quantity }}</td>
+            <td>{{ ci.item.price | currency }}</td>
+            <td>{{ (ci.item.price * ci.quantity) | currency }}</td>
+            <td>
+              <form method="post" action="{{ url_for('customer.remove_from_cart') }}">
+                <input type="hidden" name="item_id" value="{{ ci.item.id }}">
+                <button class="btn btn-sm btn-danger">×</button>
+              </form>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    <div class="d-flex justify-content-between align-items-center mt-4">
+      <h4>Total: {{ cart_total | currency }}</h4>
+      <a href="{{ url_for('customer_checkout') }}" class="btn btn-success btn-lg">Checkout</a>
+    </div>
+  {% else %}
+    <p class="text-muted">Your cart is empty.</p>
+    <a href="{{ url_for('customer_dashboard') }}" class="btn btn-outline-primary">Browse Restaurants</a>
+  {% endif %}
+</div>
+{% endblock %}

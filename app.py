@@ -8,18 +8,41 @@ from models.rating import add_rating, get_ratings_by_restaurant
 from utils.auth import login_required, customer_required, manager_required
 from utils.helpers import calculate_discounted_price
 import mysql.connector
+from collections import defaultdict
+from datetime import datetime
 
 app = Flask(__name__)
 app.secret_key = 'your_secret_key_here'
+
 
 # Database configuration
 db_config = {
     'host': 'localhost',
     'user': 'root',
-    'password': '',
+    'password': 'sabinait',
     'database': 'food_ordering_system'
 }
 
+def format_datetime(value, format='short'):
+    """
+Jinja filter to format a Python datetime.  Usage in template: {{ mydt|datetime('short') }} """
+    if not isinstance(value, datetime):
+        return value
+    if format == 'short':
+        return value.strftime('%b %d, %Y')
+    elif format == 'full':
+        return value.strftime('%A, %B %d %Y %H:%M')
+    return value.strftime('%Y-%m-%d %H:%M')
+app.jinja_env.filters['datetime'] = format_datetime
+
+def format_currency(value):
+    """Get numeric value into currrency """
+    try:
+        return f"₺{float(value):,.2f}"
+    except (ValueError, TypeError):
+        return value
+
+app.jinja_env.filters['currency'] = format_currency
 @app.route('/')
 def home():
     if 'user_id' in session:
@@ -121,41 +144,51 @@ def customer_restaurants():
     
     return render_template('customer/restaurants.html', restaurants=restaurants, search_query=search_query)
 
-@app.route('/customer/restaurant/<int:restaurant_id>')
+@app.route(
+    '/customer/restaurant/<int:restaurant_id>',
+    endpoint='customer_menu'
+)
 @login_required
 @customer_required
 def view_restaurant_menu(restaurant_id):
+    # Fetch restaurant and its raw menu items
     restaurant = get_restaurant_by_id(restaurant_id)
     menu_items = get_menu_items_by_restaurant(restaurant_id)
-    
-    # Get active discounts for these menu items
+
+    # Pull any active discounts
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
-    
-    cursor.execute("""
-        SELECT d.item_id, d.discount_percentage, 
-               i.name as item_name, i.price as original_price
+    # Build a CSV list of item IDs for the IN(...)
+    ids_csv = ','.join(str(item['item_id']) for item in menu_items) or 'NULL'
+    cursor.execute(f"""
+        SELECT d.item_id, d.discount_percentage
         FROM discounts d
-        JOIN menu_items i ON d.item_id = i.item_id
-        WHERE d.item_id IN (%s) 
-        AND CURDATE() BETWEEN d.start_date AND d.end_date
-    """ % ','.join([str(item['item_id']) for item in menu_items]))
-    
-    discounts = cursor.fetchall()
+        WHERE d.item_id IN ({ids_csv})
+          AND CURDATE() BETWEEN d.start_date AND d.end_date
+    """)
+    discounts = {d['item_id']: d['discount_percentage'] for d in cursor.fetchall()}
     cursor.close()
     conn.close()
-    
-    # Apply discounts to menu items
-    for item in menu_items:
-        item['discounted_price'] = item['price']
-        for discount in discounts:
-            if discount['item_id'] == item['item_id']:
-                item['discounted_price'] = calculate_discounted_price(
-                    item['price'], discount['discount_percentage'])
-                break
-    
-    return render_template('customer/menu.html', restaurant=restaurant, menu_items=menu_items)
 
+    # Apply discounts and group by category
+    menu_by_category = defaultdict(list)
+    for item in menu_items:
+        # apply discount if present
+        item['discounted_price'] = (
+            calculate_discounted_price(item['price'], discounts[item['item_id']])
+            if item['item_id'] in discounts
+            else item['price']
+        )
+        # group by the category key that your model returns
+        # change 'category' to whatever your column is named (e.g. 'cat_name')
+        category = item.get('category') or item.get('cat_name') or 'Uncategorized'
+        menu_by_category[category].append(item)
+
+    return render_template(
+        'customer/menu.html',
+        restaurant=restaurant,
+        menu_by_category=menu_by_category
+    )
 @app.route('/customer/cart', methods=['GET', 'POST'])
 @login_required
 @customer_required

@@ -19,7 +19,7 @@ app.secret_key = 'your_secret_key_here'
 db_config = {
     'host': 'localhost',
     'user': 'root',
-    'password': 'sabinait',
+    'password': 'Qwertyu2003',
     'database': 'food_ordering_system'
 }
 
@@ -327,25 +327,39 @@ def update_order(order_id):
 @login_required
 @manager_required
 def manager_menu(restaurant_id):
-    # Verify this restaurant belongs to the current manager
+    # Connect to the database
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
-    
+
+    # ✅ Step 1: Verify this restaurant belongs to the logged-in manager
     cursor.execute("""
-        SELECT r.* FROM restaurants r
-        WHERE r.restaurant_id = %s AND r.manager_id = %s
+        SELECT * FROM restaurants 
+        WHERE restaurant_id = %s AND manager_id = %s
     """, (restaurant_id, session['user_id']))
-    
     restaurant = cursor.fetchone()
+
     if not restaurant:
         cursor.close()
         conn.close()
-        flash('Restaurant not found or not authorized', 'error')
+        flash('Restaurant not found or not authorized.', 'error')
         return redirect(url_for('manager_dashboard'))
-    
-    menu_items = get_menu_items_by_restaurant(restaurant_id)
-    
-    # Get active discounts
+
+    # ✅ Step 2: Get menu items with currently active discounts
+    cursor.execute("""
+        SELECT 
+            i.*, 
+            d.discount_percentage, 
+            d.start_date, 
+            d.end_date
+        FROM menu_items i
+        LEFT JOIN discounts d 
+            ON i.item_id = d.item_id 
+            AND CURDATE() BETWEEN d.start_date AND d.end_date
+        WHERE i.restaurant_id = %s
+    """, (restaurant_id,))
+    menu_items = cursor.fetchall()
+
+    # ✅ Step 3: Get list of active discounts (optional for display)
     cursor.execute("""
         SELECT d.*, i.name as item_name
         FROM discounts d
@@ -353,15 +367,70 @@ def manager_menu(restaurant_id):
         WHERE i.restaurant_id = %s
         AND CURDATE() BETWEEN d.start_date AND d.end_date
     """, (restaurant_id,))
-    
     active_discounts = cursor.fetchall()
+
     cursor.close()
     conn.close()
-    
-    return render_template('manager/menu.html', 
-                         restaurant=restaurant, 
-                         menu_items=menu_items,
-                         active_discounts=active_discounts)
+
+    # ✅ Step 4: Pass everything to the template
+    return render_template('manager/menu.html',
+                           restaurant=restaurant,
+                           menu_items=menu_items,
+                           active_discounts=active_discounts)
+
+
+
+# Add a new menu item route
+
+@app.route('/manager/menu/add', methods=['POST'])
+@login_required
+@manager_required
+def add_menu_item():
+    restaurant_id = request.form['restaurant_id']
+    name = request.form['name']
+    description = request.form.get('description')
+    price = request.form['price']
+    category = request.form.get('category')
+    image = request.files['image']
+    image_url = image.filename if image else None
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        INSERT INTO menu_items (restaurant_id, name, description, price, image_url, category)
+        VALUES (%s, %s, %s, %s, %s, %s)
+    """, (restaurant_id, name, description, price, image_url, category))
+    conn.commit()
+    cursor.close()
+    conn.close()
+
+    flash("Menu item added successfully.")
+    return redirect(url_for('manager_menu', restaurant_id=restaurant_id))
+
+
+#apply discount to menu item route
+@app.route('/manager/menu/discount/<int:item_id>', methods=['POST'])
+@login_required
+@manager_required
+def apply_discount(item_id):
+    percentage = request.form['discount_percentage']
+    start_date = request.form['start_date']
+    end_date = request.form['end_date']
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        INSERT INTO discounts (item_id, discount_percentage, start_date, end_date)
+        VALUES (%s, %s, %s, %s)
+    """, (item_id, percentage, start_date, end_date))
+    conn.commit()
+    cursor.close()
+    conn.close()
+
+    flash("Discount applied successfully.")
+    return redirect(request.referrer or url_for('manager_dashboard'))
+
+
 
 @app.route('/manager/statistics/<int:restaurant_id>')
 @login_required

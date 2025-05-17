@@ -1,0 +1,35 @@
+{% extends 'manager/layout.html' %}
+{% block title %}Menu – {{ restaurant.name }}{% endblock %}
+{% block content %}
+  <h1 class="mb-4">{{ restaurant.name }} – Menu</h1>
+ <a href="{{ url_for('manager_orders', restaurant_id=restaurant.restaurant_id) }}">View Orders</a>
+
+
+  <table class="table table-striped mt-3">
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Category</th>
+        <th>Price</th>
+        <th>Discount</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for i in menu_items %}
+        <tr>
+          <td>{{ i.name }}</td>
+          <td>{{ i.category }}</td>
+          <td>{{ i.price|currency }}</td>
+          <td>
+            {% if i.discount_percentage %}
+              {{ i.discount_percentage }}%
+              ({{ (i.price * (1 - i.discount_percentage/100))|currency }})
+            {% else %}
+              —
+            {% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% endblock %}

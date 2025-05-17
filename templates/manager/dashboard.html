@@ -1,0 +1,39 @@
+{% extends 'manager/layout.html' %}
+{% block title %}Your Dashboard{% endblock %}
+{% block content %}
+  <h1 class="mb-4">Your Restaurants</h1>
+  <div class="row row-cols-1 row-cols-md-3 g-4 mb-5">
+    {% for r in restaurants %}
+      <div class="col">
+        <div class="card h-100">
+          <div class="card-body">
+            <h5 class="card-title">{{ r.name }}</h5>
+            <p class="card-text">{{ r.cuisine_type }} – {{ r.city }}</p>
+            <a href="{{ url_for('manager_orders', restaurant_id=r.restaurant_id) }}"
+               class="btn btn-primary btn-sm">View Orders</a>
+            <a href="{{ url_for('manager_menu', restaurant_id=r.restaurant_id) }}"
+               class="btn btn-secondary btn-sm">Manage Menu</a>
+                <a href="{{ url_for('manager_statistics', restaurant_id=r.restaurant_id) }}" class="btn btn-info"> Statistics </a>
+
+          </div>
+        </div>
+      </div>
+    {% endfor %}
+  </div>
+
+  <h2>Pending Orders</h2>
+  {% if pending_orders %}
+    <ul class="list-group">
+      {% for o in pending_orders %}
+        <li class="list-group-item d-flex justify-content-between align-items-center">
+          Order #{{ o.cart_id }} from {{ o.restaurant_name }} –
+          {{ o.first_name }} {{ o.last_name }} on {{ o.order_time|datetime('short') }}
+          <a href="{{ url_for('manager_orders', restaurant_id=o.restaurant_id) }}"
+             class="btn btn-sm btn-outline-primary">Process</a>
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="text-muted">No pending orders.</p>
+  {% endif %}
+{% endblock %}

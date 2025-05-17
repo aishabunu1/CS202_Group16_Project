@@ -25,7 +25,9 @@ db_config = {
 
 def format_datetime(value, format='short'):
     """
-Jinja filter to format a Python datetime.  Usage in template: {{ mydt|datetime('short') }} """
+    Jinja filter to format a Python datetime.
+    Usage in template: {{ mydt|datetime('short') }}
+    """
     if not isinstance(value, datetime):
         return value
     if format == 'short':

@@ -1,0 +1,37 @@
+{% extends 'manager/layout.html' %}
+{% block title %}All Orders{% endblock %}
+{% block content %}
+  <h1 class="mb-4">
+    Orders{% if request.args.restaurant_id %} for Restaurant #{{ request.args.restaurant_id }}{% endif %}
+  </h1>
+  <a href="{{ url_for('manager_dashboard') }}" class="btn btn-link">&laquo; Back to Dashboard</a>
+
+  {% if orders %}
+    <ul class="list-group mt-3">
+      {% for o in orders %}
+        <li class="list-group-item">
+          <div class="d-flex justify-content-between">
+            <div>
+              <strong>#{{ o.cart_id }}</strong> by {{ o.first_name }} {{ o.last_name }}
+              on {{ o.order_time|datetime('short') }}
+            </div>
+            <div>
+              <span class="badge bg-info">{{ o.status }}</span>
+            <form method="post"  action="{{ url_for('update_order', order_id=o.cart_id) }}">
+                <select name="status" onchange="this.form.submit()" class="form-select form-select-sm d-inline-block" style="width:auto">
+                  {% for s in ['preparing','sent','accepted','rejected','completed'] %}
+                    <option value="{{ s }}" {% if s == o.status %}selected{% endif %}>
+                      {{ s.title() }}
+                    </option>
+                  {% endfor %}
+                </select>
+              </form>
+            </div>
+          </div>
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="text-muted mt-3">No orders found.</p>
+  {% endif %}
+{% endblock %}

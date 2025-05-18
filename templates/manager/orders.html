@@ -17,7 +17,7 @@
             </div>
             <div>
               <span class="badge bg-info">{{ o.status }}</span>
-            <form method="post"  action="{{ url_for('update_order', order_id=o.cart_id) }}">
+            <form method="post"  action="{{ url_for('update_order_status', order_id=o.cart_id) }}">
                 <select name="status" onchange="this.form.submit()" class="form-select form-select-sm d-inline-block" style="width:auto">
                   {% for s in ['preparing','sent','accepted','rejected','completed'] %}
                     <option value="{{ s }}" {% if s == o.status %}selected{% endif %}>

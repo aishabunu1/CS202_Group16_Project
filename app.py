@@ -3,7 +3,7 @@ from database.db_connection import get_db_connection
 from models.user import authenticate_user, register_user, get_user_by_id
 from models.restaurant import get_restaurants_by_city, get_restaurant_by_id, search_restaurants
 from models.menu import get_menu_items_by_restaurant, get_menu_item_by_id
-from models.order import create_order, get_orders_by_customer, get_orders_by_restaurant, update_order_status
+from models.order import create_order, get_orders_by_customer, get_orders_by_restaurant, update_order_status, get_order_details
 from models.rating import add_rating, get_ratings_by_restaurant
 from utils.auth import login_required, customer_required, manager_required
 from utils.helpers import calculate_discounted_price
@@ -19,8 +19,9 @@ app.secret_key = 'your_secret_key_here'
 db_config = {
     'host': 'localhost',
     'user': 'root',
-    'password': 'Qwertyu2003',
+    'password': 'Hanifahlovesfood1@',
     'database': 'food_ordering_system'
+    #  'port' =3306,
 }
 
 def format_datetime(value, format='short'):
@@ -246,39 +247,82 @@ def rate_order(order_id):
     
     return render_template('customer/rate.html', order=order)
 
+
 # Manager Routes
 @app.route('/manager/dashboard')
 @login_required
 @manager_required
 def manager_dashboard():
-    user_id = session['user_id']
+    manager_id = session.get('user_id')
+    
+    # Get manager's restaurants
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
     
-    # Get manager's restaurants
-    cursor.execute("""
-        SELECT r.* FROM restaurants r
-        WHERE r.manager_id = %s
-    """, (user_id,))
-    restaurants = cursor.fetchall()
+    try:
+        # Get manager's restaurants
+        cursor.execute("SELECT * FROM restaurants WHERE manager_id = %s", (manager_id,))
+        restaurants = cursor.fetchall()
+        
+        if not restaurants:
+            return render_template('manager/dashboard.html', 
+                                restaurants=[], 
+                                pending_orders=[])
+        
+        # Get pending orders for all of manager's restaurants
+        restaurant_ids = [r['restaurant_id'] for r in restaurants]
+        placeholders = ','.join(['%s'] * len(restaurant_ids))
+        
+        # Main orders query
+        cursor.execute(f"""
+            SELECT 
+                c.cart_id, c.customer_id, c.restaurant_id, c.status,
+                c.order_time, c.accepted_time,
+                u.first_name, u.last_name,
+                r.name as restaurant_name,
+                COUNT(ci.cart_item_id) as item_count,
+                SUM(ci.quantity * IFNULL(ci.discounted_price, 
+                    (SELECT price FROM menu_items WHERE item_id = ci.item_id))) as total_price
+            FROM carts c
+            JOIN users u ON c.customer_id = u.user_id
+            JOIN restaurants r ON c.restaurant_id = r.restaurant_id
+            JOIN cart_items ci ON c.cart_id = ci.cart_id
+            WHERE c.restaurant_id IN ({placeholders}) AND c.status != 'completed'
+            GROUP BY c.cart_id
+            ORDER BY c.order_time DESC
+        """, tuple(restaurant_ids))
+        
+        orders = cursor.fetchall()
+        
+        # Get items for each order
+        for order in orders:
+            cursor.execute("""
+                SELECT 
+                    mi.name, 
+                    mi.price, 
+                    ci.quantity, 
+                    ci.discounted_price,
+                    (ci.discounted_price or mi.price) * ci.quantity as item_total
+                FROM cart_items ci
+                JOIN menu_items mi ON ci.item_id = mi.item_id
+                WHERE ci.cart_id = %s
+            """, (order['cart_id'],))
+            order['order_items'] = cursor.fetchall()  # Using 'order_items' instead of 'items'
+        
+        return render_template('manager/dashboard.html',
+                            restaurants=restaurants,
+                            pending_orders=orders)
     
-    # Get pending orders
-    cursor.execute("""
-        SELECT c.*, u.first_name, u.last_name
-        FROM carts c
-        JOIN users u ON c.customer_id = u.user_id
-        WHERE c.restaurant_id IN (SELECT restaurant_id FROM restaurants WHERE manager_id = %s)
-        AND c.status = 'sent'
-        ORDER BY c.order_time
-    """, (user_id,))
-    pending_orders = cursor.fetchall()
+    except Exception as e:
+        print(f"Error in manager_dashboard: {str(e)}")
+        return render_template('manager/dashboard.html', 
+                            restaurants=[], 
+                            pending_orders=[])
     
-    cursor.close()
-    conn.close()
-    
-    return render_template('manager/dashboard.html', 
-                         restaurants=restaurants, 
-                         pending_orders=pending_orders)
+    finally:
+        cursor.close()
+        conn.close()
+
 
 @app.route('/manager/orders')
 @login_required
@@ -312,16 +356,96 @@ def manager_orders():
 @app.route('/manager/order/<int:order_id>/update', methods=['POST'])
 @login_required
 @manager_required
-def update_order(order_id):
-    new_status = request.form['status']
+def update_order_status(order_id):
+    new_status = request.form.get('status')
+    
+    conn = get_db_connection()
+    cursor = conn.cursor()
     
     try:
-        update_order_status(order_id, new_status)
+        if new_status == 'accepted':
+            cursor.execute("""
+                UPDATE carts 
+                SET status = %s, accepted_time = CURRENT_TIMESTAMP
+                WHERE cart_id = %s AND status != 'completed'
+            """, (new_status, order_id))
+        else:
+            cursor.execute("""
+                UPDATE carts 
+                SET status = %s
+                WHERE cart_id = %s AND status != 'completed'
+            """, (new_status, order_id))
+        
+        conn.commit()
         flash('Order status updated successfully', 'success')
-    except mysql.connector.Error as err:
-        flash(f'Failed to update order status: {err}', 'error')
+    except Exception as e:
+        conn.rollback()
+        flash('Failed to update order status', 'danger')
+    finally:
+        cursor.close()
+        conn.close()
     
-    return redirect(url_for('manager_orders'))
+    return redirect(url_for('manager_dashboard'))
+
+@app.route('/manager/order/<int:order_id>')
+@login_required
+@manager_required
+def view_order(order_id):
+    order, items = get_order_details(order_id, session['user_id'])
+    
+    if not order:
+        flash('Order not found or not authorized', 'danger')
+        return redirect(url_for('manager_dashboard'))
+    
+    return render_template('manager/order_detail.html', 
+                         order=order, 
+                         items=items)
+
+@app.route('/manager/order/<int:order_id>/update', methods=['POST'])
+@login_required
+@manager_required
+def update_order_status2(order_id):
+    new_status = request.form.get('status')
+    
+    if update_order_status(order_id, session['user_id'], new_status):
+        flash('Order status updated successfully!', 'success')
+    else:
+        flash('Failed to update order status', 'danger')
+    
+    return redirect(url_for('view_order', order_id=order_id))
+
+@app.route('/add_keyword', methods=['POST'])
+@login_required
+@manager_required
+def add_keyword():
+    restaurant_id = request.form['restaurant_id']
+    keyword = request.form['keyword'].strip().lower()
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    # Check if the keyword already exists for the restaurant
+    cursor.execute("""
+        SELECT 1 FROM restaurant_keywords 
+        WHERE restaurant_id = %s AND LOWER(keyword) = %s
+    """, (restaurant_id, keyword))
+    exists = cursor.fetchone()
+
+    if exists:
+        flash("Keyword already exists for this restaurant.", "warning")
+    else:
+        cursor.execute("""
+            INSERT INTO restaurant_keywords (restaurant_id, keyword)
+            VALUES (%s, %s)
+        """, (restaurant_id, keyword))
+        conn.commit()
+        flash("Keyword added successfully!", "success")
+
+    cursor.close()
+    conn.close()
+
+    return redirect(url_for('manager_dashboard'))
+
 
 @app.route('/manager/menu/<int:restaurant_id>')
 @login_required

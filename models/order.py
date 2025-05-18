@@ -80,6 +80,40 @@ def get_orders_by_restaurant(restaurant_id):
     conn.close()
     return orders
 
+def get_order_details(order_id, manager_id):
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    
+    try:
+        # Get basic order info
+        cursor.execute("""
+            SELECT c.*, u.first_name, u.last_name, a.address, a.city, a.postal_code, r.name as restaurant_name
+            FROM carts c
+            JOIN users u ON c.customer_id = u.user_id
+            JOIN addresses a ON c.delivery_address_id = a.address_id
+            JOIN restaurants r ON c.restaurant_id = r.restaurant_id
+            WHERE c.cart_id = %s AND c.restaurant_id IN (
+                SELECT restaurant_id FROM restaurants WHERE manager_id = %s
+            )
+        """, (order_id, manager_id))
+        order = cursor.fetchone()
+        
+        if not order:
+            return None, None
+        
+        # Get order items
+        cursor.execute("""
+            SELECT mi.name, mi.price, ci.quantity, ci.discounted_price
+            FROM cart_items ci
+            JOIN menu_items mi ON ci.item_id = mi.item_id
+            WHERE ci.cart_id = %s
+        """, (order_id,))
+        items = cursor.fetchall()
+    finally:
+        cursor.close()
+        conn.close()
+        return order, items
+
 def update_order_status(order_id, new_status):
     conn = get_db_connection()
     if conn is None:

@@ -9,8 +9,6 @@
     {% for r in restaurants %}
       <div class="col-md-4 mb-4">
         <div class="card h-100">
-          <img src="{{ r.image_url or url_for('static', filename='images/default-restaurant.jpg') }}"
-               class="card-img-top" alt="{{ r.name }}">
           <div class="card-body d-flex flex-column">
             <h5 class="card-title">{{ r.name }}</h5>
             <p class="card-text">{{ r.cuisine }} • {{ r.address }}</p>

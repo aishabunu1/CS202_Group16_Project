@@ -17,8 +17,12 @@
             </div>
             <div>
               <span class="badge bg-info">{{ o.status }}</span>
-            <form method="post"  action="{{ url_for('update_order_status', order_id=o.cart_id) }}">
-                <select name="status" onchange="this.form.submit()" class="form-select form-select-sm d-inline-block" style="width:auto">
+              <form method="post" action="{{ url_for('update_order_status', order_id=o.cart_id) }}">
+                <select name="status" 
+                        onchange="this.form.submit()" 
+                        class="form-select form-select-sm d-inline-block {% if o.status == 'completed' %}bg-light text-muted{% endif %}" 
+                        style="width:auto"
+                        {% if o.status == 'completed' %}disabled{% endif %}>
                   {% for s in ['preparing','sent','accepted','rejected','completed'] %}
                     <option value="{{ s }}" {% if s == o.status %}selected{% endif %}>
                       {{ s.title() }}

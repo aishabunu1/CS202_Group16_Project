@@ -4,6 +4,12 @@
 <div class="container my-4">
   <h1 class="mb-4">Rate Order #{{ order.id }}</h1>
 
+  {% if not can_rate %}
+    <div class="alert alert-warning">
+      Rating period expired. You can only rate within 24 hours after acceptance.
+    </div>
+    <a href="{{ url_for('customer_orders') }}" class="btn btn-link">Back to Orders</a>
+  {% else %}
   <form method="post" action="{{ url_for('customer.submit_rating', order_id=order.id) }}">
     <div class="mb-3">
       <label for="rating" class="form-label">Your Rating</label>
@@ -23,5 +29,6 @@
     <button type="submit" class="btn btn-primary">Submit Rating</button>
     <a href="{{ url_for('customer_orders') }}" class="btn btn-link">Back to Orders</a>
   </form>
+  {% endif %}
 </div>
 {% endblock %}

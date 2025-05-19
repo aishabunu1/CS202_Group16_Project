@@ -16,7 +16,7 @@
           {% for ci in order['items'] %}
             <li class="list-group-item d-flex justify-content-between">
               <span>{{ ci.name }} × {{ ci.quantity }}</span>
-<span>{{ ci.total | currency }}</span>
+            <span>{{ ci.total | currency }}</span>
 
             </li>
           {% endfor %}

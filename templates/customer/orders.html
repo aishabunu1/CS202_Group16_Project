@@ -16,11 +16,18 @@
           {% for ci in order['items'] %}
             <li class="list-group-item d-flex justify-content-between">
               <span>{{ ci.name }} × {{ ci.quantity }}</span>
-<span>{{ ci.total | currency }}</span>
-
+              <span>{{ ci.total | currency }}</span>
             </li>
           {% endfor %}
         </ul>
+
+        {% if order.status == 'completed' %}
+          <div class="card-footer text-end">
+            <a href="{{ url_for('rate_order', order_id=order.cart_id) }}" class="btn btn-sm btn-outline-primary">
+              Rate Order
+            </a>
+          </div>
+        {% endif %}
       </div>
     {% endfor %}
   {% else %}

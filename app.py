@@ -10,6 +10,8 @@ from utils.helpers import calculate_discounted_price
 import mysql.connector
 from collections import defaultdict
 from datetime import datetime
+from models.rating import get_average_rating
+
 
 app = Flask(__name__)
 app.secret_key = 'your_secret_key_here'
@@ -19,7 +21,7 @@ app.secret_key = 'your_secret_key_here'
 db_config = {
     'host': 'localhost',
     'user': 'root',
-    'password': 'Hanifahlovesfood1@',
+    'password': 'Qwertyu2003',
     'database': 'food_ordering_system'
     #  'port' =3306,
 }
@@ -576,6 +578,8 @@ def manager_dashboard():
         # Get manager's restaurants
         cursor.execute("SELECT * FROM restaurants WHERE manager_id = %s", (manager_id,))
         restaurants = cursor.fetchall()
+        for r in restaurants:
+            r['average_rating'] = get_average_rating(r['restaurant_id'])
         
         if not restaurants:
             return render_template('manager/dashboard.html', 
@@ -671,10 +675,10 @@ def manager_orders():
 @manager_required
 def update_order_status(order_id):
     new_status = request.form.get('status')
-    
+
     conn = get_db_connection()
     cursor = conn.cursor()
-    
+
     try:
         if new_status == 'accepted':
             cursor.execute("""
@@ -682,23 +686,35 @@ def update_order_status(order_id):
                 SET status = %s, accepted_time = CURRENT_TIMESTAMP
                 WHERE cart_id = %s AND status != 'completed'
             """, (new_status, order_id))
+
+        elif new_status == 'completed':
+            # Eğer accepted_time boşsa CURRENT_TIMESTAMP ile set et
+            cursor.execute("""
+                UPDATE carts 
+                SET status = %s, accepted_time = COALESCE(accepted_time, CURRENT_TIMESTAMP)
+                WHERE cart_id = %s AND status != 'completed'
+            """, (new_status, order_id))
+
         else:
             cursor.execute("""
                 UPDATE carts 
                 SET status = %s
                 WHERE cart_id = %s AND status != 'completed'
             """, (new_status, order_id))
-        
+
         conn.commit()
         flash('Order status updated successfully', 'success')
+
     except Exception as e:
         conn.rollback()
-        flash('Failed to update order status', 'danger')
+        flash(f'Failed to update order status: {e}', 'danger')
+
     finally:
         cursor.close()
         conn.close()
-    
+
     return redirect(url_for('manager_dashboard'))
+
 
 @app.route('/manager/order/<int:order_id>')
 @login_required

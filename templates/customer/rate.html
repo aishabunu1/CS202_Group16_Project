@@ -2,9 +2,10 @@
 {% block title %}Rate Your Order{% endblock %}
 {% block content %}
 <div class="container my-4">
-  <h1 class="mb-4">Rate Order #{{ order.id }}</h1>
+ 
 
-  <form method="post" action="{{ url_for('customer.submit_rating', order_id=order.id) }}">
+<h1 class="mb-4">Rate Order #{{ order.cart_id }}</h1>
+  <form method="post" action="{{ url_for('rate_order', order_id=order.cart_id) }}">
     <div class="mb-3">
       <label for="rating" class="form-label">Your Rating</label>
       <select class="form-select" id="rating" name="rating" required>

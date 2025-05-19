@@ -17,6 +17,7 @@ def add_rating(cart_id, customer_id, rating_value, comment):
     cursor.close()
     conn.close()
 
+
 def get_ratings_by_restaurant(restaurant_id):
     conn = get_db_connection()
     if conn is None:
@@ -35,3 +36,17 @@ def get_ratings_by_restaurant(restaurant_id):
     cursor.close()
     conn.close()
     return ratings
+
+
+def get_average_rating(restaurant_id):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT ROUND(AVG(rating_value), 1)
+        FROM ratings
+        WHERE restaurant_id = %s
+    """, (restaurant_id,))
+    avg = cursor.fetchone()[0]
+    cursor.close()
+    conn.close()
+    return avg or 0

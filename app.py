@@ -158,10 +158,11 @@ def view_restaurant_menu(restaurant_id):
     restaurant = get_restaurant_by_id(restaurant_id)
     menu_items = get_menu_items_by_restaurant(restaurant_id)
 
-    # Pull any active discounts
+    # Connect DB to get discounts AND cart count
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
-    # Build a CSV list of item IDs for the IN(...)
+
+    # Pull any active discounts
     ids_csv = ','.join(str(item['item_id']) for item in menu_items) or 'NULL'
     cursor.execute(f"""
         SELECT d.item_id, d.discount_percentage
@@ -170,28 +171,42 @@ def view_restaurant_menu(restaurant_id):
           AND CURDATE() BETWEEN d.start_date AND d.end_date
     """)
     discounts = {d['item_id']: d['discount_percentage'] for d in cursor.fetchall()}
+
+    # 🧮 Cart item count
+    cart_item_count = 0
+    cursor.execute("""
+        SELECT SUM(quantity) AS total
+        FROM cart_items
+        WHERE cart_id IN (
+            SELECT cart_id FROM carts
+            WHERE customer_id = %s AND status = 'preparing'
+        )
+    """, (session['user_id'],))
+    result = cursor.fetchone()
+    if result and result['total']:
+        cart_item_count = result['total']
+
     cursor.close()
     conn.close()
 
     # Apply discounts and group by category
     menu_by_category = defaultdict(list)
     for item in menu_items:
-        # apply discount if present
         item['discounted_price'] = (
             calculate_discounted_price(item['price'], discounts[item['item_id']])
             if item['item_id'] in discounts
             else item['price']
         )
-        # group by the category key that your model returns
-        # change 'category' to whatever your column is named (e.g. 'cat_name')
         category = item.get('category') or item.get('cat_name') or 'Uncategorized'
         menu_by_category[category].append(item)
 
     return render_template(
         'customer/menu.html',
         restaurant=restaurant,
-        menu_by_category=menu_by_category
+        menu_by_category=menu_by_category,
+        cart_item_count=cart_item_count
     )
+
 @app.route('/customer/cart', methods=['GET', 'POST'])
 @login_required
 @customer_required
@@ -246,8 +261,9 @@ def customer_cart():
         conn.commit()
         cursor.close()
         conn.close()
+
         flash("Item added to cart.", "success")
-        return redirect(url_for('customer_cart'))
+        return redirect(request.referrer or url_for('customer_dashboard'))  # BU SATIR doğru girintili olmalı ✅
 
     # GET request: sepet içeriğini göster
     conn = get_db_connection()

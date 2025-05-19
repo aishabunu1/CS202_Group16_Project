@@ -19,7 +19,7 @@ app.secret_key = 'your_secret_key_here'
 db_config = {
     'host': 'localhost',
     'user': 'root',
-    'password': 'Qwertyu2003',
+    'password': 'Hanifahlovesfood1@',
     'database': 'food_ordering_system'
     #  'port' =3306,
 }
@@ -151,6 +151,7 @@ def customer_restaurants():
     '/customer/restaurant/<int:restaurant_id>',
     endpoint='customer_menu'
 )
+
 @login_required
 @customer_required
 def view_restaurant_menu(restaurant_id):
@@ -214,25 +215,33 @@ def customer_cart():
     user_id = session['user_id']
     
     if request.method == 'POST':
-        print("FORM ITEM ID:", request.form.get('item_id'))
-
         item_id = int(request.form['item_id'])
         quantity = int(request.form.get('quantity', 1))
 
         conn = get_db_connection()
         cursor = conn.cursor()
 
-        # Aktif sepeti kontrol et
+        # Check if there's an active cart for this user
         cursor.execute("""
-            SELECT cart_id FROM carts
+            SELECT cart_id, restaurant_id FROM carts
             WHERE customer_id = %s AND status = 'preparing'
         """, (user_id,))
         cart = cursor.fetchone()
 
+        # Get the restaurant_id for the item being added
+        cursor.execute("SELECT restaurant_id FROM menu_items WHERE item_id = %s", (item_id,))
+        item_restaurant = cursor.fetchone()
+        
         if cart:
             cart_id = cart[0]
+            # Check if the item's restaurant matches the cart's restaurant
+            if cart[1] != item_restaurant[0]:
+                cursor.close()
+                conn.close()
+                flash("You can only order from one restaurant at a time. Please complete or cancel your current order before ordering from another restaurant.", "error")
+                return redirect(url_for('customer_cart'))
         else:
-            # Müşterinin varsayılan adresi alınır
+            # Create new cart
             cursor.execute("""
                 SELECT address_id FROM addresses
                 WHERE user_id = %s AND is_default = TRUE
@@ -243,29 +252,43 @@ def customer_cart():
                 return redirect(url_for('customer_dashboard'))
             address_id = address[0]
 
-            # Yeni sepet oluşturulur
             cursor.execute("""
                 INSERT INTO carts (customer_id, restaurant_id, delivery_address_id, status)
-                VALUES (%s, (SELECT restaurant_id FROM menu_items WHERE item_id = %s), %s, 'preparing')
-            """, (user_id, item_id, address_id))
+                VALUES (%s, %s, %s, 'preparing')
+            """, (user_id, item_restaurant[0], address_id))
             conn.commit()
             cart_id = cursor.lastrowid
 
-        # Sepete ürün eklenir (aynı ürün varsa miktar artırılır)
+        # Check if item already exists in cart
         cursor.execute("""
-            INSERT INTO cart_items (cart_id, item_id, quantity)
-            VALUES (%s, %s, %s)
-            ON DUPLICATE KEY UPDATE quantity = quantity + VALUES(quantity)
-        """, (cart_id, item_id, quantity))
+            SELECT quantity FROM cart_items
+            WHERE cart_id = %s AND item_id = %s
+        """, (cart_id, item_id))
+        existing_item = cursor.fetchone()
+
+        if existing_item:
+            # Update quantity if item already exists
+            new_quantity = existing_item[0] + quantity
+            cursor.execute("""
+                UPDATE cart_items
+                SET quantity = %s
+                WHERE cart_id = %s AND item_id = %s
+            """, (new_quantity, cart_id, item_id))
+        else:
+            # Add new item to cart
+            cursor.execute("""
+                INSERT INTO cart_items (cart_id, item_id, quantity)
+                VALUES (%s, %s, %s)
+            """, (cart_id, item_id, quantity))
 
         conn.commit()
         cursor.close()
         conn.close()
 
         flash("Item added to cart.", "success")
-        return redirect(request.referrer or url_for('customer_dashboard'))  # BU SATIR doğru girintili olmalı ✅
+        return redirect(request.referrer or url_for('customer_dashboard'))  
 
-    # GET request: sepet içeriğini göster
+    # GET request: show cart contents
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
 
@@ -308,6 +331,62 @@ def customer_cart():
     conn.close()
 
     return render_template('customer/cart.html', cart_items=cart_items, cart_total=cart_total)
+
+@app.route('/update_cart_quantities', methods=['POST'])
+@login_required
+@customer_required
+def update_cart_quantities():
+    user_id = session['user_id']
+    
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        # Get the active cart for this user
+        cursor.execute("""
+            SELECT cart_id FROM carts
+            WHERE customer_id = %s AND status = 'preparing'
+        """, (user_id,))
+        cart = cursor.fetchone()
+        
+        if not cart:
+            flash('No active cart found.', 'warning')
+            return redirect(url_for('customer_cart'))
+            
+        cart_id = cart[0]
+        
+        # Get the submitted quantities and item_ids
+        quantities = request.form.getlist('quantities')
+        item_ids = request.form.getlist('item_ids')
+        
+        if len(quantities) != len(item_ids):
+            flash('Invalid quantity data submitted.', 'error')
+            return redirect(url_for('customer_cart'))
+        
+        # Update each item's quantity
+        for item_id, quantity in zip(item_ids, quantities):
+            try:
+                item_id = int(item_id)
+                quantity = int(quantity)
+                if quantity >= 1:
+                    cursor.execute("""
+                        UPDATE cart_items
+                        SET quantity = %s
+                        WHERE cart_id = %s AND item_id = %s
+                    """, (quantity, cart_id, item_id))
+            except ValueError:
+                continue  # Skip invalid entries
+        
+        conn.commit()
+        flash('Cart quantities updated successfully.', 'success')
+    except Exception as e:
+        conn.rollback()
+        flash(f'Failed to update cart quantities: {str(e)}', 'error')
+    finally:
+        cursor.close()
+        conn.close()
+    
+    return redirect(url_for('customer_cart'))
 
 
 @app.route('/customer/cart/remove', methods=['POST'])
@@ -737,9 +816,24 @@ def manager_menu(restaurant_id):
                            active_discounts=active_discounts)
 
 
+@app.route('/add_to_cart', methods=['POST'])
+def add_to_cart():
+    item_id = request.form['item_id']
+    quantity = int(request.form.get('quantity', 1))
+    user_id = session['user_id']
+
+    cart_item = CartItem.query.filter_by(user_id=user_id, item_id=item_id).first()
+    if cart_item:
+        cart_item.quantity += quantity  # update existing item
+    else:
+        cart_item = CartItem(user_id=user_id, item_id=item_id, quantity=quantity)
+        db.session.add(cart_item)
+
+    db.session.commit()
+    return jsonify({'message': 'Item added to cart', 'cart_item_count': get_cart_count(user_id)})
+
 
 # Add a new menu item route
-
 @app.route('/manager/menu/add', methods=['POST'])
 @login_required
 @manager_required
@@ -788,6 +882,25 @@ def apply_discount(item_id):
     flash("Discount applied successfully.")
     return redirect(request.referrer or url_for('manager_dashboard'))
 
+
+# @app.route('/update_cart_quantities', methods=['POST'])
+# @login_required
+# def update_cart_quantities():
+#     cart_id = get_or_create_cart_for_user(session['user_id'])  # Your logic
+#     quantities = request.form.getlist('quantities')
+#     item_ids = request.form.getlist('quantities')
+
+#     for item_id, quantity in request.form.get('quantities', {}).items():
+#         try:
+#             item_id = int(item_id)
+#             quantity = int(quantity)
+#             if quantity >= 1:
+#                 update_cart_item_quantity(cart_id, item_id, quantity)
+#         except:
+#             continue
+
+#     flash('Cart updated successfully.', 'success')
+#     return redirect(url_for('customer_cart'))
 
 
 @app.route('/manager/statistics/<int:restaurant_id>')

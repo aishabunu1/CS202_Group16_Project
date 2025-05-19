@@ -13,17 +13,6 @@ document.addEventListener('DOMContentLoaded', function() {
             if (response.ok) {
                 const result = await response.json();
                 updateCartCount(result.cart_item_count);
-                
-                // Show notification
-                const notification = document.createElement('div');
-                notification.className = 'alert alert-success position-fixed top-0 end-0 m-3';
-                notification.style.zIndex = '1000';
-                notification.textContent = 'Item added to cart!';
-                document.body.appendChild(notification);
-                
-                setTimeout(() => {
-                    notification.remove();
-                }, 3000);
             }
         });
     });

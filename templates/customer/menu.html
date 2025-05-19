@@ -2,12 +2,18 @@
 {% block title %}Menu – {{ restaurant.name }}{% endblock %}
 {% block content %}
 <div class="container my-4">
-  <div class="d-flex justify-content-between align-items-center mb-4">
-    <h1>{{ restaurant.name }} Menu</h1>
-    <a href="{{ url_for('customer_cart') }}" class="btn btn-outline-success">
-      Cart ({{ cart_item_count }})
-    </a>
-  </div>
+  <h1 class="mb-4">{{ restaurant.name }} Menu</h1>
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      {% for category, message in messages %}
+        <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+          {{ message }}
+          <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
+      {% endfor %}
+    {% endif %}
+  {% endwith %}
 
   {% for category, items in menu_by_category.items() %}
     <h3 class="mt-4">{{ category }}</h3>
@@ -20,22 +26,21 @@
             {% else %}
               <img src="{{ url_for('static', filename='default-food.jpg') }}" class="card-img-top" alt="No Image" style="height: 200px; object-fit: cover;">
             {% endif %}
-            <div class="card-body d-flex">
-              <div class="flex-grow-1">
-                <h5 class="card-title">{{ item.name }}</h5>
-                <p class="card-text">{{ item.description }}</p>
-                <p class="fw-bold">{{ item.price | currency }}</p>
-              </div>
-<<<<<<< HEAD
-<form method="post" action="{{ url_for('customer_cart') }}">
-    <input type="hidden" name="item_id" value="{{ item.item_id }}">
+            <div class="card-body d-flex flex-column">
+              <h5 class="card-title">{{ item.name }}</h5>
+              <p class="card-text">{{ item.description }}</p>
+              <p class="fw-bold">{{ item.price | currency }}</p>
 
-=======
-              <form method="post" action="{{ url_for('customer_cart') }}">
-                <input type="hidden" name="item_id" value="{{ item.id }}">
->>>>>>> 74e6f3fd804e4ad09a37402b13fbe7d0bcc22820
-                <input type="hidden" name="quantity" value="1">
-                <button type="submit" class="btn btn-primary align-self-start">Add</button>
+              <form method="post" action="{{ url_for('customer_cart') }}" class="mt-auto d-flex align-items-center">
+                <input type="hidden" name="item_id" value="{{ item.item_id }}">
+
+                <div class="input-group input-group-sm me-2" style="width: 100px;">
+                  <button type="button" class="btn btn-outline-secondary btn-decrease">&minus;</button>
+                  <input type="number" name="quantity" value="1" min="1" class="form-control text-center quantity-input">
+                  <button type="button" class="btn btn-outline-secondary btn-increase">+</button>
+                </div>
+
+                <button type="submit" class="btn btn-primary btn-sm">Add</button>
               </form>
             </div>
           </div>
@@ -46,4 +51,33 @@
     </div>
   {% endfor %}
 </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+  document.querySelectorAll('.quantity-input').forEach(input => {
+    const group = input.closest('.input-group');
+    const minusBtn = group.querySelector('.btn-decrease');
+    const plusBtn = group.querySelector('.btn-increase');
+
+    const updateButtons = () => {
+      minusBtn.disabled = parseInt(input.value) <= 1;
+    };
+
+    minusBtn.addEventListener('click', () => {
+      input.stepDown();
+      input.dispatchEvent(new Event('change'));
+      updateButtons();
+    });
+
+    plusBtn.addEventListener('click', () => {
+      input.stepUp();
+      input.dispatchEvent(new Event('change'));
+      updateButtons();
+    });
+
+    input.addEventListener('change', updateButtons);
+    updateButtons();
+  });
+});
+</script>
 {% endblock %}

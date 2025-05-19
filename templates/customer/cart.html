@@ -3,6 +3,18 @@
 {% block content %}
 <div class="container my-4">
   <h1 class="mb-4">Order Summary</h1>
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      {% for category, message in messages %}
+        <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+          {{ message }}
+          <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
+      {% endfor %}
+    {% endif %}
+  {% endwith %}
+
   {% if cart_items %}
     <table class="table">
       <thead>
@@ -16,17 +28,22 @@
       </thead>
       <tbody>
         {% for ci in cart_items %}
-          <tr>
+          <tr data-item-id="{{ ci.item.id }}" class="cart-row">
             <td>{{ ci.item.name }}</td>
-            <td>{{ ci.quantity }}</td>
-            <td>{{ ci.item.price | currency }}</td>
-            <td>{{ (ci.item.price * ci.quantity) | currency }}</td>
             <td>
-              <form method="post" action="{{ url_for('remove_from_cart') }}">
-
-                <input type="hidden" name="item_id" value="{{ ci.item.id }}">
-                <button class="btn btn-sm btn-danger">×</button>
-              </form>
+              <div class="input-group input-group-sm align-items-center" style="width: 110px;">
+                <button type="button" class="btn btn-outline-secondary qty-btn" data-action="decrement">−</button>
+                <input type="number" name="quantities" value="{{ ci.quantity }}" min="1"
+                  class="form-control text-center qty-input" style="width: 45px;">
+                <button type="button" class="btn btn-outline-secondary qty-btn" data-action="increment">+</button>
+                <input type="hidden" name="item_ids" value="{{ ci.item.id }}">
+              </div>
+            </td>
+            <td class="item-price">{{ ci.item.price | currency }}</td>
+            <td class="item-total">{{ (ci.item.price * ci.quantity) | currency }}</td>
+            <td>
+              <button type="button" class="btn btn-sm btn-danger remove-item" 
+                      data-item-id="{{ ci.item.id }}">×</button>
             </td>
           </tr>
         {% endfor %}
@@ -34,12 +51,107 @@
     </table>
 
     <div class="d-flex justify-content-between align-items-center mt-4">
-      <h4>Total: {{ cart_total | currency }}</h4>
-      <a href="{{ url_for('customer_checkout') }}" class="btn btn-success btn-lg">Checkout</a>
+      <h4>Total: <span id="cart-total">{{ cart_total | currency }}</span></h4>
+      <div>
+        <a href="{{ url_for('customer_checkout') }}" class="btn btn-success">Checkout</a>
+      </div>
     </div>
   {% else %}
     <p class="text-muted">Your cart is empty.</p>
     <a href="{{ url_for('customer_dashboard') }}" class="btn btn-outline-primary">Browse Restaurants</a>
   {% endif %}
 </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  // Quantity button handlers
+  document.querySelectorAll('.qty-btn').forEach(button => {
+    button.addEventListener('click', function(e) {
+      e.preventDefault();
+      const input = this.parentElement.querySelector('.qty-input');
+      let current = parseInt(input.value);
+      
+      if (this.dataset.action === 'increment') {
+        input.value = current + 1;
+      } else if (this.dataset.action === 'decrement' && current > 1) {
+        input.value = current - 1;
+      }
+      
+      updateTotals();
+    });
+  });
+
+  // Input change handler
+  document.querySelectorAll('.qty-input').forEach(input => {
+    input.addEventListener('change', function() {
+      if (this.value < 1) this.value = 1;
+      updateTotals();
+    });
+  });
+
+  // Remove item handler
+  document.querySelectorAll('.remove-item').forEach(button => {
+    button.addEventListener('click', async function() {
+      const itemId = this.dataset.itemId;
+      if (confirm('Remove this item from cart?')) {
+        try {
+          const response = await fetch('/customer/cart/remove', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body: `item_id=${itemId}`
+          });
+          
+          if (response.redirected) {
+            window.location.href = response.url;
+          }
+        } catch (error) {
+          console.error('Error removing item:', error);
+        }
+      }
+    });
+  });
+
+  // Update totals display
+  function updateTotals() {
+    let total = 0;
+    document.querySelectorAll('tr.cart-row').forEach(row => {
+      const qtyInput = row.querySelector('.qty-input');
+      const priceText = row.querySelector('.item-price').textContent;
+      const price = parseFloat(priceText.replace(/[₺,]/g, ''));
+      const qty = parseInt(qtyInput.value);
+      const itemTotal = price * qty;
+
+      // Update per-item total cell
+      row.querySelector('.item-total').textContent = '₺' + itemTotal.toFixed(2);
+      total += itemTotal;
+
+      // Toggle - button state
+      const decBtn = row.querySelector('.qty-btn[data-action="decrement"]');
+      decBtn.disabled = qty <= 1;
+    });
+
+    // Update cart total
+    document.getElementById('cart-total').textContent = '₺' + total.toFixed(2);
+  }
+
+  // Initialize button states
+  updateTotals();
+});
+</script>
+
+<style>
+  /* Hide arrows in number input */
+  input.qty-input::-webkit-outer-spin-button,
+  input.qty-input::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+
+  input.qty-input {
+    -moz-appearance: textfield;
+    appearance: textfield;
+  }
+</style>
 {% endblock %}

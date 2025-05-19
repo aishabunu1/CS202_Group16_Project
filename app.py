@@ -19,7 +19,7 @@ app.secret_key = 'your_secret_key_here'
 db_config = {
     'host': 'localhost',
     'user': 'root',
-    'password': 'Hanifahlovesfood1@',
+    'password': 'Qwertyu2003',
     'database': 'food_ordering_system'
     #  'port' =3306,
 }
@@ -196,20 +196,238 @@ def view_restaurant_menu(restaurant_id):
 @login_required
 @customer_required
 def customer_cart():
-    if request.method == 'POST':
-        # Handle adding to cart (would use session in a real implementation)
-        pass
+    user_id = session['user_id']
     
-    # Display cart contents
-    return render_template('customer/cart.html')
+    if request.method == 'POST':
+        print("FORM ITEM ID:", request.form.get('item_id'))
+
+        item_id = int(request.form['item_id'])
+        quantity = int(request.form.get('quantity', 1))
+
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # Aktif sepeti kontrol et
+        cursor.execute("""
+            SELECT cart_id FROM carts
+            WHERE customer_id = %s AND status = 'preparing'
+        """, (user_id,))
+        cart = cursor.fetchone()
+
+        if cart:
+            cart_id = cart[0]
+        else:
+            # Müşterinin varsayılan adresi alınır
+            cursor.execute("""
+                SELECT address_id FROM addresses
+                WHERE user_id = %s AND is_default = TRUE
+            """, (user_id,))
+            address = cursor.fetchone()
+            if not address:
+                flash("Please set a default address before ordering.", "error")
+                return redirect(url_for('customer_dashboard'))
+            address_id = address[0]
+
+            # Yeni sepet oluşturulur
+            cursor.execute("""
+                INSERT INTO carts (customer_id, restaurant_id, delivery_address_id, status)
+                VALUES (%s, (SELECT restaurant_id FROM menu_items WHERE item_id = %s), %s, 'preparing')
+            """, (user_id, item_id, address_id))
+            conn.commit()
+            cart_id = cursor.lastrowid
+
+        # Sepete ürün eklenir (aynı ürün varsa miktar artırılır)
+        cursor.execute("""
+            INSERT INTO cart_items (cart_id, item_id, quantity)
+            VALUES (%s, %s, %s)
+            ON DUPLICATE KEY UPDATE quantity = quantity + VALUES(quantity)
+        """, (cart_id, item_id, quantity))
+
+        conn.commit()
+        cursor.close()
+        conn.close()
+        flash("Item added to cart.", "success")
+        return redirect(url_for('customer_cart'))
+
+    # GET request: sepet içeriğini göster
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+
+    cursor.execute("""
+        SELECT cart_id FROM carts
+        WHERE customer_id = %s AND status = 'preparing'
+    """, (user_id,))
+    cart = cursor.fetchone()
+
+    cart_items = []
+    cart_total = 0
+
+    if cart:
+        cart_id = cart['cart_id']
+        cursor.execute("""
+            SELECT 
+                ci.quantity, 
+                mi.item_id, 
+                mi.name, 
+                mi.price,
+                IFNULL(ci.discounted_price, mi.price) as final_price
+            FROM cart_items ci
+            JOIN menu_items mi ON ci.item_id = mi.item_id
+            WHERE ci.cart_id = %s
+        """, (cart_id,))
+        rows = cursor.fetchall()
+
+        for row in rows:
+            cart_items.append({
+                'quantity': row['quantity'],
+                'item': {
+                    'id': row['item_id'],
+                    'name': row['name'],
+                    'price': row['final_price'],
+                }
+            })
+            cart_total += row['final_price'] * row['quantity']
+
+    cursor.close()
+    conn.close()
+
+    return render_template('customer/cart.html', cart_items=cart_items, cart_total=cart_total)
+
+
+@app.route('/customer/cart/remove', methods=['POST'])
+@login_required
+@customer_required
+def remove_from_cart():
+    user_id = session['user_id']
+    item_id = int(request.form['item_id'])
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        SELECT cart_id FROM carts
+        WHERE customer_id = %s AND status = 'preparing'
+    """, (user_id,))
+    cart = cursor.fetchone()
+
+    if cart:
+        cart_id = cart[0]
+        cursor.execute("""
+            DELETE FROM cart_items
+            WHERE cart_id = %s AND item_id = %s
+        """, (cart_id, item_id))
+        conn.commit()
+
+    cursor.close()
+    conn.close()
+    return redirect(url_for('customer_cart'))
+
+@app.route('/customer/checkout', methods=['GET', 'POST'])
+@login_required
+@customer_required
+def customer_checkout():
+    user_id = session['user_id']
+    
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+
+    # Müşterinin aktif sepeti (status = 'preparing')
+    cursor.execute("""
+        SELECT cart_id FROM carts
+        WHERE customer_id = %s AND status = 'preparing'
+    """, (user_id,))
+    cart = cursor.fetchone()
+
+    if not cart:
+        flash("No active cart to checkout.", "warning")
+        return redirect(url_for('customer_cart'))
+
+    cart_id = cart['cart_id']
+
+    if request.method == 'POST':
+        # Siparişi gönder
+        cursor.execute("""
+            UPDATE carts
+            SET status = 'sent', order_time = NOW()
+            WHERE cart_id = %s
+        """, (cart_id,))
+        conn.commit()
+
+        flash("Order placed successfully!", "success")
+        cursor.close()
+        conn.close()
+        return redirect(url_for('customer_orders'))
+
+    # GET isteğinde sipariş özetini göster
+    cursor.execute("""
+        SELECT 
+            ci.quantity, 
+            mi.name, 
+            IFNULL(ci.discounted_price, mi.price) as price,
+            (IFNULL(ci.discounted_price, mi.price) * ci.quantity) as total
+        FROM cart_items ci
+        JOIN menu_items mi ON ci.item_id = mi.item_id
+        WHERE ci.cart_id = %s
+    """, (cart_id,))
+    items = cursor.fetchall()
+
+    total_price = sum(item['total'] for item in items)
+
+    cursor.close()
+    conn.close()
+
+    return render_template('customer/checkout.html', items=items, total=total_price)
+
 
 @app.route('/customer/orders')
 @login_required
 @customer_required
 def customer_orders():
     user_id = session['user_id']
-    orders = get_orders_by_customer(user_id)
+    
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+
+    cursor.execute("""
+        SELECT 
+            c.cart_id, c.status, c.order_time, c.accepted_time,
+            r.name as restaurant_name
+        FROM carts c
+        JOIN restaurants r ON c.restaurant_id = r.restaurant_id
+        WHERE c.customer_id = %s
+        ORDER BY c.order_time DESC
+    """, (user_id,))
+    
+    orders = cursor.fetchall()
+
+    for order in orders:
+        cursor.execute("""
+            SELECT mi.name, ci.quantity, ci.discounted_price, mi.price
+            FROM cart_items ci
+            JOIN menu_items mi ON ci.item_id = mi.item_id
+            WHERE ci.cart_id = %s
+        """, (order['cart_id'],))
+        items = cursor.fetchall()
+
+        # VERİYİ ÖN HAZIRLIKLI YAPALIM 
+        for i in items:
+            try:
+                qty = float(i['quantity'])
+                price = float(i['discounted_price']) if i['discounted_price'] is not None else float(i['price'])
+                i['total'] = qty * price
+            except Exception as e:
+                print("Error in order item:", i, e)
+                i['total'] = 0.0
+        
+        order['items'] = items
+    
+    cursor.close()
+    conn.close()
+    
     return render_template('customer/orders.html', orders=orders)
+
+
+
 
 @app.route('/customer/rate/<int:order_id>', methods=['GET', 'POST'])
 @login_required

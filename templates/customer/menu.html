@@ -22,7 +22,8 @@
                 <p class="fw-bold">{{ item.price | currency }}</p>
               </div>
 <form method="post" action="{{ url_for('customer_cart') }}">
-    <input type="hidden" name="item_id" value="{{ item.id }}">
+    <input type="hidden" name="item_id" value="{{ item.item_id }}">
+
                 <input type="hidden" name="quantity" value="1">
                 <button type="submit" class="btn btn-primary align-self-start">Add</button>
               </form>

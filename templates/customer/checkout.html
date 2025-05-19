@@ -1,0 +1,35 @@
+{% extends 'customer/layout.html' %}
+{% block title %}Checkout{% endblock %}
+{% block content %}
+<div class="container my-4">
+  <h1 class="mb-4">Confirm Your Order</h1>
+
+  <table class="table">
+    <thead>
+      <tr>
+        <th>Item</th>
+        <th>Qty</th>
+        <th>Price</th>
+        <th>Total</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for item in items %}
+        <tr>
+          <td>{{ item.name }}</td>
+          <td>{{ item.quantity }}</td>
+          <td>{{ item.price | currency }}</td>
+          <td>{{ item.total | currency }}</td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <div class="d-flex justify-content-between align-items-center mt-4">
+    <h4>Total: {{ total | currency }}</h4>
+    <form method="post">
+      <button type="submit" class="btn btn-success btn-lg">Place Order</button>
+    </form>
+  </div>
+</div>
+{% endblock %}

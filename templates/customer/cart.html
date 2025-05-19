@@ -22,7 +22,8 @@
             <td>{{ ci.item.price | currency }}</td>
             <td>{{ (ci.item.price * ci.quantity) | currency }}</td>
             <td>
-              <form method="post" action="{{ url_for('customer.remove_from_cart') }}">
+              <form method="post" action="{{ url_for('remove_from_cart') }}">
+
                 <input type="hidden" name="item_id" value="{{ ci.item.id }}">
                 <button class="btn btn-sm btn-danger">×</button>
               </form>

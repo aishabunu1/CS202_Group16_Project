@@ -10,7 +10,6 @@ from utils.helpers import calculate_discounted_price
 import mysql.connector
 from collections import defaultdict
 from datetime import datetime
-from datetime import datetime, timedelta
 from models.rating import get_average_rating
 
 
@@ -524,98 +523,133 @@ def customer_orders():
     
     return render_template('customer/orders.html', orders=orders)
 
-
 @app.route('/customer/rate/<int:order_id>', methods=['GET', 'POST'])
 @login_required
 @customer_required
 def rate_order(order_id):
+    if request.method == 'POST':
+        rating_value = int(request.form['rating'])
+        comment = request.form.get('comment', '')
+        
+        try:
+            add_rating(order_id, session['user_id'], rating_value, comment)
+            flash('Thank you for your rating!', 'success')
+            return redirect(url_for('customer_orders'))
+        except mysql.connector.Error as err:
+            flash(f'Failed to submit rating: {err}', 'error')
+    
+    # GET request - show rating form
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
-
-    # Fetch order with accepted time and restaurant info
+    
     cursor.execute("""
-        SELECT c.cart_id, r.name AS restaurant_name, c.accepted_time, r.restaurant_id,
-               c.customer_id
+        SELECT c.cart_id, r.name as restaurant_name
         FROM carts c
         JOIN restaurants r ON c.restaurant_id = r.restaurant_id
         WHERE c.cart_id = %s AND c.customer_id = %s
     """, (order_id, session['user_id']))
     
     order = cursor.fetchone()
-
-    if not order:
-        cursor.close()
-        conn.close()
-        flash('Order not found.', 'error')
-        return redirect(url_for('customer_orders'))
-
-    # Check if order is accepted and accepted_time is not None
-    if not order['accepted_time']:
-        cursor.close()
-        conn.close()
-        flash('You can only rate after the order is accepted.', 'error')
-        return redirect(url_for('customer_orders'))
-
-    # Check if rating is within 24 hours of acceptance
-    accepted_dt = order['accepted_time']
-    if isinstance(accepted_dt, str):
-        # Convert string datetime from MySQL to Python datetime if needed
-        accepted_dt = datetime.strptime(accepted_dt, '%Y-%m-%d %H:%M:%S')
-
-    if datetime.utcnow() > accepted_dt + timedelta(hours=24):
-        cursor.close()
-        conn.close()
-        flash('Rating period expired. You can only rate within 24 hours after acceptance.', 'error')
-        return redirect(url_for('customer_orders'))
-
-    # Check if rating already exists for this order (one rating per order)
-    cursor.execute("SELECT rating_id FROM ratings WHERE cart_id = %s", (order_id,))
-    existing_rating = cursor.fetchone()
-
-    if existing_rating:
-        cursor.close()
-        conn.close()
-        flash('You have already rated this order.', 'info')
-        return redirect(url_for('customer_orders'))
-
-    if request.method == 'POST':
-        rating_value = int(request.form['rating'])
-        comment = request.form.get('comment', '')
-
-        try:
-            # Your existing function to add rating
-            add_rating(order_id, session['user_id'], rating_value, comment)
-
-            # Update restaurant average rating and total ratings
-            # Fetch current average and count
-            cursor.execute("SELECT average_rating, total_ratings FROM restaurants WHERE restaurant_id = %s", (order['restaurant_id'],))
-            rest = cursor.fetchone()
-
-            avg = rest['average_rating'] or 0
-            total = rest['total_ratings'] or 0
-
-            new_total = total + 1
-            new_avg = (avg * total + rating_value) / new_total
-
-            # Update database
-            cursor.execute("""
-                UPDATE restaurants 
-                SET average_rating = %s, total_ratings = %s
-                WHERE restaurant_id = %s
-            """, (new_avg, new_total, order['restaurant_id']))
-
-            conn.commit()
-            flash('Thank you for your rating!', 'success')
-            return redirect(url_for('customer_orders'))
-
-        except mysql.connector.Error as err:
-            conn.rollback()
-            flash(f'Failed to submit rating: {err}', 'error')
-
     cursor.close()
     conn.close()
-
+    
+    if not order:
+        flash('Order not found', 'error')
+        return redirect(url_for('customer_orders'))
+    
     return render_template('customer/rate.html', order=order)
+
+# @app.route('/customer/rate/<int:order_id>', methods=['GET', 'POST'])
+# @login_required
+# @customer_required
+# def rate_order(order_id):
+#     conn = get_db_connection()
+#     cursor = conn.cursor(dictionary=True)
+
+#     # Fetch order with accepted time and restaurant info
+#     cursor.execute("""
+#         SELECT c.cart_id, r.name AS restaurant_name, c.accepted_time, r.restaurant_id,
+#                c.customer_id
+#         FROM carts c
+#         JOIN restaurants r ON c.restaurant_id = r.restaurant_id
+#         WHERE c.cart_id = %s AND c.customer_id = %s
+#     """, (order_id, session['user_id']))
+    
+#     order = cursor.fetchone()
+
+#     if not order:
+#         cursor.close()
+#         conn.close()
+#         flash('Order not found.', 'error')
+#         return redirect(url_for('customer_orders'))
+
+#     # Check if order is accepted and accepted_time is not None
+#     if not order['accepted_time']:
+#         cursor.close()
+#         conn.close()
+#         flash('You can only rate after the order is accepted.', 'error')
+#         return redirect(url_for('customer_orders'))
+
+#     # Check if rating is within 24 hours of acceptance
+#     accepted_dt = order['accepted_time']
+#     if isinstance(accepted_dt, str):
+#         # Convert string datetime from MySQL to Python datetime if needed
+#         accepted_dt = datetime.strptime(accepted_dt, '%Y-%m-%d %H:%M:%S')
+
+#     if datetime.utcnow() > accepted_dt + timedelta(hours=24):
+#         cursor.close()
+#         conn.close()
+#         flash('Rating period expired. You can only rate within 24 hours after acceptance.', 'error')
+#         return redirect(url_for('customer_orders'))
+
+#     # Check if rating already exists for this order (one rating per order)
+#     cursor.execute("SELECT rating_id FROM ratings WHERE cart_id = %s", (order_id,))
+#     existing_rating = cursor.fetchone()
+
+#     if existing_rating:
+#         cursor.close()
+#         conn.close()
+#         flash('You have already rated this order.', 'info')
+#         return redirect(url_for('customer_orders'))
+
+#     if request.method == 'POST':
+#         rating_value = int(request.form['rating'])
+#         comment = request.form.get('comment', '')
+
+#         try:
+#             # Your existing function to add rating
+#             add_rating(order_id, session['user_id'], rating_value, comment)
+
+#             # Update restaurant average rating and total ratings
+#             # Fetch current average and count
+#             cursor.execute("SELECT average_rating, total_ratings FROM restaurants WHERE restaurant_id = %s", (order['restaurant_id'],))
+#             rest = cursor.fetchone()
+
+#             avg = rest['average_rating'] or 0
+#             total = rest['total_ratings'] or 0
+
+#             new_total = total + 1
+#             new_avg = (avg * total + rating_value) / new_total
+
+#             # Update database
+#             cursor.execute("""
+#                 UPDATE restaurants 
+#                 SET average_rating = %s, total_ratings = %s
+#                 WHERE restaurant_id = %s
+#             """, (new_avg, new_total, order['restaurant_id']))
+
+#             conn.commit()
+#             flash('Thank you for your rating!', 'success')
+#             return redirect(url_for('customer_orders'))
+
+#         except mysql.connector.Error as err:
+#             conn.rollback()
+#             flash(f'Failed to submit rating: {err}', 'error')
+
+#     cursor.close()
+#     conn.close()
+
+#     return render_template('customer/rate.html', order=order)
 
 
 # Manager Routes

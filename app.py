@@ -7,6 +7,7 @@ from models.order import create_order, get_orders_by_customer, get_orders_by_res
 from models.rating import add_rating, get_ratings_by_restaurant
 from utils.auth import login_required, customer_required, manager_required
 from utils.helpers import calculate_discounted_price
+from models.rating import get_average_rating
 import mysql.connector
 from collections import defaultdict
 from datetime import datetime
@@ -143,7 +144,14 @@ def customer_restaurants():
         restaurants = search_restaurants(search_query, city)
     else:
         restaurants = get_restaurants_by_city(city)
-    
+
+    # ✅ Add average rating and rating count for each restaurant
+    for r in restaurants:
+        r['average_rating'] = get_average_rating(r['restaurant_id'])
+        cursor.execute("SELECT COUNT(*) FROM ratings WHERE restaurant_id = %s", (r['restaurant_id'],))
+        r['rating_count'] = cursor.fetchone()['COUNT(*)']
+        r['total_ratings'] = r['rating_count']
+
     cursor.close()
     conn.close()
     

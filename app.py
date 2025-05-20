@@ -177,14 +177,8 @@ def customer_restaurants():
     return render_template('customer/restaurants.html', restaurants=restaurants, search_query=search_query)
 
 
-
-@app.route(
-    '/customer/restaurant/<int:restaurant_id>',
-    endpoint='customer_menu'
-)
-
-
 # viewing mneu of restuarnt route
+@app.route('/customer/restaurant/<int:restaurant_id>', endpoint='customer_menu')
 @login_required
 @customer_required
 def view_restaurant_menu(restaurant_id):
@@ -252,115 +246,128 @@ def customer_cart():
         conn = get_db_connection()
         cursor = conn.cursor()
 
-        # Check if there's an active cart for this user
+        try:
+            # Check if there's an active cart for this user
+            cursor.execute("""
+                SELECT cart_id, restaurant_id FROM carts
+                WHERE customer_id = %s AND status = 'preparing'
+            """, (user_id,))
+            cart = cursor.fetchone()
+
+            # Get the restaurant_id for the item being added
+            cursor.execute("SELECT restaurant_id FROM menu_items WHERE item_id = %s", (item_id,))
+            item_restaurant = cursor.fetchone()
+            
+            if cart:
+                cart_id = cart[0]
+                # Check if the item's restaurant matches the cart's restaurant
+                if cart[1] != item_restaurant[0]:
+                    flash("You can only order from one restaurant at a time. Please complete or cancel your current order before ordering from another restaurant.", "error")
+                    return redirect(url_for('customer_cart'))
+            else:
+                # Create new cart
+                cursor.execute("""
+                    SELECT address_id FROM addresses
+                    WHERE user_id = %s AND is_default = TRUE
+                """, (user_id,))
+                address = cursor.fetchone()
+                if not address:
+                    flash("Please set a default address before ordering.", "error")
+                    return redirect(url_for('customer_dashboard'))
+                address_id = address[0]
+
+                cursor.execute("""
+                    INSERT INTO carts (customer_id, restaurant_id, delivery_address_id, status)
+                    VALUES (%s, %s, %s, 'preparing')
+                """, (user_id, item_restaurant[0], address_id))
+                conn.commit()
+                cart_id = cursor.lastrowid
+
+            # Check if item already exists in cart
+            cursor.execute("""
+                SELECT quantity FROM cart_items
+                WHERE cart_id = %s AND item_id = %s
+            """, (cart_id, item_id))
+            existing_item = cursor.fetchone()
+
+            if existing_item:
+                # Update quantity if item already exists
+                new_quantity = existing_item[0] + quantity
+                cursor.execute("""
+                    UPDATE cart_items
+                    SET quantity = %s
+                    WHERE cart_id = %s AND item_id = %s
+                """, (new_quantity, cart_id, item_id))
+            else:
+                # Add new item to cart
+                cursor.execute("""
+                    INSERT INTO cart_items (cart_id, item_id, quantity)
+                    VALUES (%s, %s, %s)
+                """, (cart_id, item_id, quantity))
+
+            conn.commit()
+            flash("Item added to cart.", "success")
+            return redirect(request.referrer or url_for('customer_dashboard'))  
+
+        except Exception as e:
+            conn.rollback()
+            flash(f"Error: {str(e)}", "error")
+            return redirect(url_for('customer_cart'))
+        finally:
+            cursor.close()
+            conn.close()
+
+    # GET request: show cart contents
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+
+    try:
         cursor.execute("""
-            SELECT cart_id, restaurant_id FROM carts
+            SELECT cart_id FROM carts
             WHERE customer_id = %s AND status = 'preparing'
         """, (user_id,))
         cart = cursor.fetchone()
 
-        # Get the restaurant_id for the item being added
-        cursor.execute("SELECT restaurant_id FROM menu_items WHERE item_id = %s", (item_id,))
-        item_restaurant = cursor.fetchone()
-        
+        cart_items = []
+        cart_total = 0
+
         if cart:
-            cart_id = cart[0]
-            # Check if the item's restaurant matches the cart's restaurant
-            if cart[1] != item_restaurant[0]:
-                cursor.close()
-                conn.close()
-                flash("You can only order from one restaurant at a time. Please complete or cancel your current order before ordering from another restaurant.", "error")
-                return redirect(url_for('customer_cart'))
-        else:
-            # Create new cart
+            cart_id = cart['cart_id']
             cursor.execute("""
-                SELECT address_id FROM addresses
-                WHERE user_id = %s AND is_default = TRUE
-            """, (user_id,))
-            address = cursor.fetchone()
-            if not address:
-                flash("Please set a default address before ordering.", "error")
-                return redirect(url_for('customer_dashboard'))
-            address_id = address[0]
+                SELECT 
+                    ci.quantity, 
+                    mi.item_id, 
+                    mi.name, 
+                    mi.price,
+                    IFNULL(ci.discounted_price, mi.price) as final_price
+                FROM cart_items ci
+                JOIN menu_items mi ON ci.item_id = mi.item_id
+                WHERE ci.cart_id = %s
+            """, (cart_id,))
+            rows = cursor.fetchall()
 
-            cursor.execute("""
-                INSERT INTO carts (customer_id, restaurant_id, delivery_address_id, status)
-                VALUES (%s, %s, %s, 'preparing')
-            """, (user_id, item_restaurant[0], address_id))
-            conn.commit()
-            cart_id = cursor.lastrowid
+            for row in rows:
+                cart_items.append({
+                    'quantity': row['quantity'],
+                    'item': {
+                        'id': row['item_id'],
+                        'name': row['name'],
+                        'price': row['final_price'],
+                    }
+                })
+                cart_total += row['final_price'] * row['quantity']
 
-        # Check if item already exists in cart
-        cursor.execute("""
-            SELECT quantity FROM cart_items
-            WHERE cart_id = %s AND item_id = %s
-        """, (cart_id, item_id))
-        existing_item = cursor.fetchone()
-
-        if existing_item:
-            # Update quantity if item already exists
-            new_quantity = existing_item[0] + quantity
-            cursor.execute("""
-                UPDATE cart_items
-                SET quantity = %s
-                WHERE cart_id = %s AND item_id = %s
-            """, (new_quantity, cart_id, item_id))
-        else:
-            # Add new item to cart
-            cursor.execute("""
-                INSERT INTO cart_items (cart_id, item_id, quantity)
-                VALUES (%s, %s, %s)
-            """, (cart_id, item_id, quantity))
-
-        conn.commit()
+        return render_template('customer/cart.html', 
+                            cart_items=cart_items, 
+                            cart_total=cart_total,
+                            cart_exists=bool(cart))
+    
+    except Exception as e:
+        flash(f"Error: {str(e)}", "error")
+        return redirect(url_for('customer_dashboard'))
+    finally:
         cursor.close()
         conn.close()
-
-        flash("Item added to cart.", "success")
-        return redirect(request.referrer or url_for('customer_dashboard'))  
-
-    conn = get_db_connection()
-    cursor = conn.cursor(dictionary=True)
-
-    cursor.execute("""
-        SELECT cart_id FROM carts
-        WHERE customer_id = %s AND status = 'preparing'
-    """, (user_id,))
-    cart = cursor.fetchone()
-
-    cart_items = []
-    cart_total = 0
-
-    if cart:
-        cart_id = cart['cart_id']
-        cursor.execute("""
-            SELECT 
-                ci.quantity, 
-                mi.item_id, 
-                mi.name, 
-                mi.price,
-                IFNULL(ci.discounted_price, mi.price) as final_price
-            FROM cart_items ci
-            JOIN menu_items mi ON ci.item_id = mi.item_id
-            WHERE ci.cart_id = %s
-        """, (cart_id,))
-        rows = cursor.fetchall()
-
-        for row in rows:
-            cart_items.append({
-                'quantity': row['quantity'],
-                'item': {
-                    'id': row['item_id'],
-                    'name': row['name'],
-                    'price': row['final_price'],
-                }
-            })
-            cart_total += row['final_price'] * row['quantity']
-
-    cursor.close()
-    conn.close()
-
-    return render_template('customer/cart.html', cart_items=cart_items, cart_total=cart_total)
 
 
 # update quantity of item route
@@ -431,24 +438,54 @@ def remove_from_cart():
     item_id = int(request.form['item_id'])
 
     conn = get_db_connection()
-    cursor = conn.cursor()
+    cursor = conn.cursor(dictionary=True)
 
-    cursor.execute("""
-        SELECT cart_id FROM carts
-        WHERE customer_id = %s AND status = 'preparing'
-    """, (user_id,))
-    cart = cursor.fetchone()
+    try:
+        # Get the cart
+        cursor.execute("""
+            SELECT cart_id, restaurant_id FROM carts
+            WHERE customer_id = %s AND status = 'preparing'
+        """, (user_id,))
+        cart = cursor.fetchone()
 
-    if cart:
-        cart_id = cart[0]
+        if not cart:
+            flash("No active cart found", "error")
+            return redirect(url_for('customer_cart'))
+
+        cart_id = cart['cart_id']
+        
+        # Remove the item
         cursor.execute("""
             DELETE FROM cart_items
             WHERE cart_id = %s AND item_id = %s
         """, (cart_id, item_id))
+        
+        # Check if cart is now empty
+        cursor.execute("""
+            SELECT COUNT(*) as item_count FROM cart_items
+            WHERE cart_id = %s
+        """, (cart_id,))
+        item_count = cursor.fetchone()['item_count']
+        
+        if item_count == 0:
+            # Delete the empty cart
+            cursor.execute("""
+                DELETE FROM carts
+                WHERE cart_id = %s
+            """, (cart_id,))
+            flash("Cart is now empty", "info")
+        else:
+            flash("Item removed from cart", "success")
+            
         conn.commit()
-
-    cursor.close()
-    conn.close()
+        
+    except Exception as e:
+        conn.rollback()
+        flash(f"Error removing item: {str(e)}", "error")
+    finally:
+        cursor.close()
+        conn.close()
+    
     return redirect(url_for('customer_cart'))
 
 
@@ -507,8 +544,6 @@ def customer_checkout():
     return render_template('customer/checkout.html', items=items, total=total_price)
 
 
-
-
 # customers orders view route
 @app.route('/customer/orders')
 @login_required
@@ -555,7 +590,6 @@ def customer_orders():
     conn.close()
     
     return render_template('customer/orders.html', orders=orders)
-
 
 
 # customer order rate route
@@ -633,7 +667,6 @@ def rate_order(order_id):
             cursor.close()
         if 'conn' in locals():
             conn.close()
-
 
 
 # Manager Routes
@@ -743,7 +776,6 @@ def manager_orders():
         conn.close()
     
     return render_template('manager/orders.html', orders=orders)
-
 
 
 # update order status route
@@ -918,6 +950,8 @@ def manager_menu(restaurant_id):
 
 # add item to cart route
 @app.route('/add_to_cart', methods=['POST'])
+@login_required
+@customer_required
 def add_to_cart():
     item_id = request.form['item_id']
     quantity = int(request.form.get('quantity', 1))
@@ -987,6 +1021,8 @@ def apply_discount(item_id):
 
 # restaurant search route
 @app.route('/restaurants/search')
+@login_required
+@customer_required
 def restaurant_search():
     q = request.args.get('q', '')
     restaurants = restaurants.query.filter(restaurants.name.ilike(f'%{q}%')).all()

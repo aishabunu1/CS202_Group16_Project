@@ -21,10 +21,8 @@
             <td>{{ ci.item.name }}</td>
             <td>
               <div class="input-group input-group-sm align-items-center" style="width: 110px;">
-                <button type="button" class="btn btn-outline-secondary qty-btn" data-action="decrement">−</button>
                 <input type="number" name="quantities" value="{{ ci.quantity }}" min="1"
                   class="form-control text-center qty-input" style="width: 45px;">
-                <button type="button" class="btn btn-outline-secondary qty-btn" data-action="increment">+</button>
                 <input type="hidden" name="item_ids" value="{{ ci.item.id }}">
               </div>
             </td>

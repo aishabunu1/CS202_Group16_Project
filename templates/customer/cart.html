@@ -123,11 +123,11 @@ document.addEventListener('DOMContentLoaded', function() {
       const qty = parseInt(qtyInput.value);
       const itemTotal = price * qty;
 
-      // Update per-item total cell
+      // Update per item total cell
       row.querySelector('.item-total').textContent = '₺' + itemTotal.toFixed(2);
       total += itemTotal;
 
-      // Toggle - button state
+      // Toggle  button state
       const decBtn = row.querySelector('.qty-btn[data-action="decrement"]');
       decBtn.disabled = qty <= 1;
     });
@@ -142,7 +142,6 @@ document.addEventListener('DOMContentLoaded', function() {
 </script>
 
 <style>
-  /* Hide arrows in number input */
   input.qty-input::-webkit-outer-spin-button,
   input.qty-input::-webkit-inner-spin-button {
     -webkit-appearance: none;

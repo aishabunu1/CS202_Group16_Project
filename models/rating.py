@@ -17,6 +17,14 @@ def add_rating(cart_id, customer_id, rating_value, comment):
     cursor.close()
     conn.close()
 
+def is_order_already_rated(cart_id):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT COUNT(*) FROM ratings WHERE cart_id = %s", (cart_id,))
+    count = cursor.fetchone()[0]
+    cursor.close()
+    conn.close()
+    return count > 0
 
 def get_ratings_by_restaurant(restaurant_id):
     conn = get_db_connection()

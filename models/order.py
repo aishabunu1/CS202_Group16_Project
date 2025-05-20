@@ -137,3 +137,22 @@ def update_order_status(order_id, new_status):
     conn.commit()
     cursor.close()
     conn.close()
+
+
+def get_order_by_id(cart_id):
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    
+    cursor.execute("""
+        SELECT cart_id, customer_id, restaurant_id, order_time, status
+        FROM carts
+        WHERE cart_id = %s
+    """, (cart_id,))
+    
+    order = cursor.fetchone()
+    cursor.close()
+    conn.close()
+    return order
+
+
+    

@@ -1,13 +1,15 @@
 from flask import Flask, render_template, request, redirect, url_for, session, flash
 from database.db_connection import get_db_connection
+from models import rating
 from models.user import authenticate_user, register_user, get_user_by_id
 from models.restaurant import get_restaurants_by_city, get_restaurant_by_id, search_restaurants
 from models.menu import get_menu_items_by_restaurant, get_menu_item_by_id
 from models.order import create_order, get_orders_by_customer, get_orders_by_restaurant, update_order_status, get_order_details
 from models.rating import add_rating, get_ratings_by_restaurant
+from models.order import get_order_by_id
+from models.rating import add_rating, is_order_already_rated
 from utils.auth import login_required, customer_required, manager_required
 from utils.helpers import calculate_discounted_price
-from models.rating import get_average_rating
 import mysql.connector
 from collections import defaultdict
 from datetime import datetime
@@ -27,6 +29,8 @@ db_config = {
     #  'port' =3306,
 }
 
+
+
 def format_datetime(value, format='short'):
     """
     Jinja filter to format a Python datetime.
@@ -41,12 +45,16 @@ def format_datetime(value, format='short'):
     return value.strftime('%Y-%m-%d %H:%M')
 app.jinja_env.filters['datetime'] = format_datetime
 
+
+
 def format_currency(value):
     """Get numeric value into currrency """
     try:
         return f"₺{float(value):,.2f}"
     except (ValueError, TypeError):
         return value
+
+
 
 app.jinja_env.filters['currency'] = format_currency
 @app.route('/')
@@ -59,6 +67,8 @@ def home():
             return redirect(url_for('manager_dashboard'))
     return render_template('auth/login.html')
 
+
+# login to system route
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
@@ -75,6 +85,8 @@ def login():
         else:
             flash('Invalid username or password', 'error')
     return render_template('auth/login.html')
+
+
 
 @app.route('/register', methods=['GET', 'POST'])
 def register():
@@ -95,10 +107,14 @@ def register():
     
     return render_template('auth/register.html')
 
+
+
 @app.route('/logout')
 def logout():
     session.clear()
     return redirect(url_for('home'))
+
+
 
 # Customer Routes
 @app.route('/customer/dashboard')
@@ -115,7 +131,7 @@ def customer_dashboard():
         WHERE user_id = %s AND is_default = TRUE
     """, (user_id,))
     address = cursor.fetchone()
-    city = address['city'] if address else 'Istanbul'  # Default city
+    city = address['city'] if address else 'Istanbul'  
     
     restaurants = get_restaurants_by_city(city)
     cursor.close()
@@ -123,6 +139,9 @@ def customer_dashboard():
     
     return render_template('customer/dashboard.html', restaurants=restaurants, city=city)
 
+
+
+# customers available retsuarnts route
 @app.route('/customer/restaurants')
 @login_required
 @customer_required
@@ -145,7 +164,7 @@ def customer_restaurants():
     else:
         restaurants = get_restaurants_by_city(city)
 
-    # ✅ Add average rating and rating count for each restaurant
+    # Adding average rating and rating count for each restaurant
     for r in restaurants:
         r['average_rating'] = get_average_rating(r['restaurant_id'])
         cursor.execute("SELECT COUNT(*) FROM ratings WHERE restaurant_id = %s", (r['restaurant_id'],))
@@ -157,19 +176,21 @@ def customer_restaurants():
     
     return render_template('customer/restaurants.html', restaurants=restaurants, search_query=search_query)
 
+
+
 @app.route(
     '/customer/restaurant/<int:restaurant_id>',
     endpoint='customer_menu'
 )
 
+
+# viewing mneu of restuarnt route
 @login_required
 @customer_required
 def view_restaurant_menu(restaurant_id):
-    # Fetch restaurant and its raw menu items
     restaurant = get_restaurant_by_id(restaurant_id)
     menu_items = get_menu_items_by_restaurant(restaurant_id)
 
-    # Connect DB to get discounts AND cart count
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
 
@@ -183,7 +204,6 @@ def view_restaurant_menu(restaurant_id):
     """)
     discounts = {d['item_id']: d['discount_percentage'] for d in cursor.fetchall()}
 
-    # 🧮 Cart item count
     cart_item_count = 0
     cursor.execute("""
         SELECT SUM(quantity) AS total
@@ -200,7 +220,6 @@ def view_restaurant_menu(restaurant_id):
     cursor.close()
     conn.close()
 
-    # Apply discounts and group by category
     menu_by_category = defaultdict(list)
     for item in menu_items:
         item['discounted_price'] = (
@@ -218,6 +237,8 @@ def view_restaurant_menu(restaurant_id):
         cart_item_count=cart_item_count
     )
 
+
+# customer's cart route
 @app.route('/customer/cart', methods=['GET', 'POST'])
 @login_required
 @customer_required
@@ -298,7 +319,6 @@ def customer_cart():
         flash("Item added to cart.", "success")
         return redirect(request.referrer or url_for('customer_dashboard'))  
 
-    # GET request: show cart contents
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
 
@@ -342,6 +362,8 @@ def customer_cart():
 
     return render_template('customer/cart.html', cart_items=cart_items, cart_total=cart_total)
 
+
+# update quantity of item route
 @app.route('/update_cart_quantities', methods=['POST'])
 @login_required
 @customer_required
@@ -385,7 +407,7 @@ def update_cart_quantities():
                         WHERE cart_id = %s AND item_id = %s
                     """, (quantity, cart_id, item_id))
             except ValueError:
-                continue  # Skip invalid entries
+                continue  
         
         conn.commit()
         flash('Cart quantities updated successfully.', 'success')
@@ -399,6 +421,8 @@ def update_cart_quantities():
     return redirect(url_for('customer_cart'))
 
 
+
+# remove an item from cart route
 @app.route('/customer/cart/remove', methods=['POST'])
 @login_required
 @customer_required
@@ -427,6 +451,8 @@ def remove_from_cart():
     conn.close()
     return redirect(url_for('customer_cart'))
 
+
+# customer chcekout page route
 @app.route('/customer/checkout', methods=['GET', 'POST'])
 @login_required
 @customer_required
@@ -436,7 +462,6 @@ def customer_checkout():
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
 
-    # Müşterinin aktif sepeti (status = 'preparing')
     cursor.execute("""
         SELECT cart_id FROM carts
         WHERE customer_id = %s AND status = 'preparing'
@@ -450,7 +475,6 @@ def customer_checkout():
     cart_id = cart['cart_id']
 
     if request.method == 'POST':
-        # Siparişi gönder
         cursor.execute("""
             UPDATE carts
             SET status = 'sent', order_time = NOW()
@@ -463,7 +487,6 @@ def customer_checkout():
         conn.close()
         return redirect(url_for('customer_orders'))
 
-    # GET isteğinde sipariş özetini göster
     cursor.execute("""
         SELECT 
             ci.quantity, 
@@ -484,6 +507,9 @@ def customer_checkout():
     return render_template('customer/checkout.html', items=items, total=total_price)
 
 
+
+
+# customers orders view route
 @app.route('/customer/orders')
 @login_required
 @customer_required
@@ -514,7 +540,6 @@ def customer_orders():
         """, (order['cart_id'],))
         items = cursor.fetchall()
 
-        # VERİYİ ÖN HAZIRLIKLI YAPALIM 
         for i in items:
             try:
                 qty = float(i['quantity'])
@@ -531,133 +556,84 @@ def customer_orders():
     
     return render_template('customer/orders.html', orders=orders)
 
+
+
+# customer order rate route
 @app.route('/customer/rate/<int:order_id>', methods=['GET', 'POST'])
 @login_required
 @customer_required
 def rate_order(order_id):
-    if request.method == 'POST':
-        rating_value = int(request.form['rating'])
-        comment = request.form.get('comment', '')
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
         
-        try:
-            add_rating(order_id, session['user_id'], rating_value, comment)
-            flash('Thank you for your rating!', 'success')
+        # Get order details including acceptance time
+        cursor.execute("""
+            SELECT 
+                c.cart_id, 
+                r.name as restaurant_name,
+                r.restaurant_id,
+                c.status,
+                c.accepted_time,
+                TIMESTAMPDIFF(HOUR, c.accepted_time, NOW()) as hours_since_acceptance
+            FROM carts c
+            JOIN restaurants r ON c.restaurant_id = r.restaurant_id
+            WHERE c.cart_id = %s AND c.customer_id = %s
+        """, (order_id, session['user_id']))
+        
+        order = cursor.fetchone()
+        
+        if not order:
+            flash('Order not found or not authorized', 'error')
             return redirect(url_for('customer_orders'))
-        except mysql.connector.Error as err:
-            flash(f'Failed to submit rating: {err}', 'error')
-    
-    # GET request - show rating form
-    conn = get_db_connection()
-    cursor = conn.cursor(dictionary=True)
-    
-    cursor.execute("""
-        SELECT c.cart_id, r.name as restaurant_name
-        FROM carts c
-        JOIN restaurants r ON c.restaurant_id = r.restaurant_id
-        WHERE c.cart_id = %s AND c.customer_id = %s
-    """, (order_id, session['user_id']))
-    
-    order = cursor.fetchone()
-    cursor.close()
-    conn.close()
-    
-    if not order:
-        flash('Order not found', 'error')
+        
+        # Check if order is completed
+        if order['status'] != 'completed':
+            flash('You can only rate completed orders', 'error')
+            return redirect(url_for('customer_orders'))
+        
+        # Check if order was accepted more than 24 hours ago
+        if order['hours_since_acceptance'] is not None and order['hours_since_acceptance'] > 24:
+            flash('Cannot rate order because it was accepted more than 24 hours ago', 'error')
+            return redirect(url_for('customer_orders'))
+        
+        # Check if already rated
+        cursor.execute("SELECT 1 FROM ratings WHERE cart_id = %s", (order_id,))
+        if cursor.fetchone():
+            flash('You have already rated this order', 'warning')
+            return redirect(url_for('customer_orders'))
+        
+        # Handle rating form submission
+        if request.method == 'POST':
+            rating_value = int(request.form.get('rating', 0))
+            comment = request.form.get('comments', '').strip()
+            
+            if not 1 <= rating_value <= 5:
+                flash('Please provide a valid rating between 1 and 5', 'error')
+            else:
+                try:
+                    add_rating(
+                        cart_id=order_id,
+                        customer_id=session['user_id'],
+                        rating_value=rating_value,
+                        comment=comment,
+                    )
+                    flash('Thank you for your rating!', 'success')
+                    return redirect(url_for('customer_orders'))
+                except Exception as e:
+                    flash(f'Failed to submit rating: {str(e)}', 'error')
+        
+        return render_template('customer/rate.html', order=order)
+        
+    except Exception as e:
+        flash(f'An error occurred: {str(e)}', 'error')
         return redirect(url_for('customer_orders'))
-    
-    return render_template('customer/rate.html', order=order)
+    finally:
+        if 'cursor' in locals():
+            cursor.close()
+        if 'conn' in locals():
+            conn.close()
 
-# @app.route('/customer/rate/<int:order_id>', methods=['GET', 'POST'])
-# @login_required
-# @customer_required
-# def rate_order(order_id):
-#     conn = get_db_connection()
-#     cursor = conn.cursor(dictionary=True)
-
-#     # Fetch order with accepted time and restaurant info
-#     cursor.execute("""
-#         SELECT c.cart_id, r.name AS restaurant_name, c.accepted_time, r.restaurant_id,
-#                c.customer_id
-#         FROM carts c
-#         JOIN restaurants r ON c.restaurant_id = r.restaurant_id
-#         WHERE c.cart_id = %s AND c.customer_id = %s
-#     """, (order_id, session['user_id']))
-    
-#     order = cursor.fetchone()
-
-#     if not order:
-#         cursor.close()
-#         conn.close()
-#         flash('Order not found.', 'error')
-#         return redirect(url_for('customer_orders'))
-
-#     # Check if order is accepted and accepted_time is not None
-#     if not order['accepted_time']:
-#         cursor.close()
-#         conn.close()
-#         flash('You can only rate after the order is accepted.', 'error')
-#         return redirect(url_for('customer_orders'))
-
-#     # Check if rating is within 24 hours of acceptance
-#     accepted_dt = order['accepted_time']
-#     if isinstance(accepted_dt, str):
-#         # Convert string datetime from MySQL to Python datetime if needed
-#         accepted_dt = datetime.strptime(accepted_dt, '%Y-%m-%d %H:%M:%S')
-
-#     if datetime.utcnow() > accepted_dt + timedelta(hours=24):
-#         cursor.close()
-#         conn.close()
-#         flash('Rating period expired. You can only rate within 24 hours after acceptance.', 'error')
-#         return redirect(url_for('customer_orders'))
-
-#     # Check if rating already exists for this order (one rating per order)
-#     cursor.execute("SELECT rating_id FROM ratings WHERE cart_id = %s", (order_id,))
-#     existing_rating = cursor.fetchone()
-
-#     if existing_rating:
-#         cursor.close()
-#         conn.close()
-#         flash('You have already rated this order.', 'info')
-#         return redirect(url_for('customer_orders'))
-
-#     if request.method == 'POST':
-#         rating_value = int(request.form['rating'])
-#         comment = request.form.get('comment', '')
-
-#         try:
-#             # Your existing function to add rating
-#             add_rating(order_id, session['user_id'], rating_value, comment)
-
-#             # Update restaurant average rating and total ratings
-#             # Fetch current average and count
-#             cursor.execute("SELECT average_rating, total_ratings FROM restaurants WHERE restaurant_id = %s", (order['restaurant_id'],))
-#             rest = cursor.fetchone()
-
-#             avg = rest['average_rating'] or 0
-#             total = rest['total_ratings'] or 0
-
-#             new_total = total + 1
-#             new_avg = (avg * total + rating_value) / new_total
-
-#             # Update database
-#             cursor.execute("""
-#                 UPDATE restaurants 
-#                 SET average_rating = %s, total_ratings = %s
-#                 WHERE restaurant_id = %s
-#             """, (new_avg, new_total, order['restaurant_id']))
-
-#             conn.commit()
-#             flash('Thank you for your rating!', 'success')
-#             return redirect(url_for('customer_orders'))
-
-#         except mysql.connector.Error as err:
-#             conn.rollback()
-#             flash(f'Failed to submit rating: {err}', 'error')
-
-#     cursor.close()
-#     conn.close()
-
-#     return render_template('customer/rate.html', order=order)
 
 
 # Manager Routes
@@ -667,7 +643,6 @@ def rate_order(order_id):
 def manager_dashboard():
     manager_id = session.get('user_id')
     
-    # Get manager's restaurants
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
     
@@ -721,7 +696,7 @@ def manager_dashboard():
                 JOIN menu_items mi ON ci.item_id = mi.item_id
                 WHERE ci.cart_id = %s
             """, (order['cart_id'],))
-            order['order_items'] = cursor.fetchall()  # Using 'order_items' instead of 'items'
+            order['order_items'] = cursor.fetchall()  
         
         return render_template('manager/dashboard.html',
                             restaurants=restaurants,
@@ -738,6 +713,8 @@ def manager_dashboard():
         conn.close()
 
 
+
+# show all orders for the restaurant of the manager route
 @app.route('/manager/orders')
 @login_required
 @manager_required
@@ -767,6 +744,9 @@ def manager_orders():
     
     return render_template('manager/orders.html', orders=orders)
 
+
+
+# update order status route
 @app.route('/manager/order/<int:order_id>/update', methods=['POST'])
 @login_required
 @manager_required
@@ -785,7 +765,6 @@ def update_order_status(order_id):
             """, (new_status, order_id))
 
         elif new_status == 'completed':
-            # Eğer accepted_time boşsa CURRENT_TIMESTAMP ile set et
             cursor.execute("""
                 UPDATE carts 
                 SET status = %s, accepted_time = COALESCE(accepted_time, CURRENT_TIMESTAMP)
@@ -813,6 +792,8 @@ def update_order_status(order_id):
     return redirect(url_for('manager_dashboard'))
 
 
+
+# show orders route
 @app.route('/manager/order/<int:order_id>')
 @login_required
 @manager_required
@@ -827,6 +808,9 @@ def view_order(order_id):
                          order=order, 
                          items=items)
 
+
+
+# update order status route
 @app.route('/manager/order/<int:order_id>/update', methods=['POST'])
 @login_required
 @manager_required
@@ -840,6 +824,9 @@ def update_order_status2(order_id):
     
     return redirect(url_for('view_order', order_id=order_id))
 
+
+
+# add new restaurant keyword route
 @app.route('/add_keyword', methods=['POST'])
 @login_required
 @manager_required
@@ -873,15 +860,15 @@ def add_keyword():
     return redirect(url_for('manager_dashboard'))
 
 
+# manager menu route
 @app.route('/manager/menu/<int:restaurant_id>')
 @login_required
 @manager_required
 def manager_menu(restaurant_id):
-    # Connect to the database
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
 
-    # ✅ Step 1: Verify this restaurant belongs to the logged-in manager
+    # Verify this restaurant belongs to the logged-in manager
     cursor.execute("""
         SELECT * FROM restaurants 
         WHERE restaurant_id = %s AND manager_id = %s
@@ -894,7 +881,7 @@ def manager_menu(restaurant_id):
         flash('Restaurant not found or not authorized.', 'error')
         return redirect(url_for('manager_dashboard'))
 
-    # ✅ Step 2: Get menu items with currently active discounts
+    #  Get menu items with currently active discounts
     cursor.execute("""
         SELECT 
             i.*, 
@@ -909,7 +896,7 @@ def manager_menu(restaurant_id):
     """, (restaurant_id,))
     menu_items = cursor.fetchall()
 
-    # ✅ Step 3: Get list of active discounts (optional for display)
+    #  Get list of active discounts
     cursor.execute("""
         SELECT d.*, i.name as item_name
         FROM discounts d
@@ -922,13 +909,14 @@ def manager_menu(restaurant_id):
     cursor.close()
     conn.close()
 
-    # ✅ Step 4: Pass everything to the template
     return render_template('manager/menu.html',
                            restaurant=restaurant,
                            menu_items=menu_items,
                            active_discounts=active_discounts)
 
 
+
+# add item to cart route
 @app.route('/add_to_cart', methods=['POST'])
 def add_to_cart():
     item_id = request.form['item_id']
@@ -946,7 +934,8 @@ def add_to_cart():
     return jsonify({'message': 'Item added to cart', 'cart_item_count': get_cart_count(user_id)})
 
 
-# Add a new menu item route
+
+# add menu item route
 @app.route('/manager/menu/add', methods=['POST'])
 @login_required
 @manager_required
@@ -996,21 +985,19 @@ def apply_discount(item_id):
     return redirect(request.referrer or url_for('manager_dashboard'))
 
 
+# restaurant search route
 @app.route('/restaurants/search')
 def restaurant_search():
     q = request.args.get('q', '')
-    # Simple example search
     restaurants = restaurants.query.filter(restaurants.name.ilike(f'%{q}%')).all()
-    # Pass restaurants with avg rating & total_ratings available for template logic
     return render_template('restaurants.html', restaurants=restaurants)
 
 
-
+# statistics page route
 @app.route('/manager/statistics/<int:restaurant_id>')
 @login_required
 @manager_required
 def manager_statistics(restaurant_id):
-    # Verify this restaurant belongs to the current manager
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
     

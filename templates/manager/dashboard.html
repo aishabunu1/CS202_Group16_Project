@@ -18,7 +18,7 @@
             <a href="{{ url_for('manager_statistics', restaurant_id=r.restaurant_id) }}"
                class="btn btn-info btn-sm">Statistics</a>
 
-            <!-- Add Keyword Form -->
+            <!-- 'Add Keyword' Form -->
             <form method="POST" action="{{ url_for('add_keyword') }}" class="mt-3">
               <input type="hidden" name="restaurant_id" value="{{ r.restaurant_id }}">
               <div class="input-group input-group-sm">

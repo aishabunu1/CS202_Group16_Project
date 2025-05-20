@@ -24,7 +24,7 @@ app.secret_key = 'your_secret_key_here'
 db_config = {
     'host': 'localhost',
     'user': 'root',
-    'password': 'Hanifahlovesfood1@',
+    'password': 'Qwertyu2003',
     'database': 'food_ordering_system'
     #  'port' =3306,
 }
@@ -232,7 +232,6 @@ def view_restaurant_menu(restaurant_id):
     )
 
 
-# customer's cart route
 @app.route('/customer/cart', methods=['GET', 'POST'])
 @login_required
 @customer_required
@@ -254,18 +253,30 @@ def customer_cart():
             """, (user_id,))
             cart = cursor.fetchone()
 
-            # Get the restaurant_id for the item being added
-            cursor.execute("SELECT restaurant_id FROM menu_items WHERE item_id = %s", (item_id,))
-            item_restaurant = cursor.fetchone()
-            
+            # Get the restaurant_id and base price of the item
+            cursor.execute("SELECT restaurant_id, price FROM menu_items WHERE item_id = %s", (item_id,))
+            item_data = cursor.fetchone()
+            item_restaurant_id = item_data[0]
+            base_price = item_data[1]
+
+            # Check for active discount
+            cursor.execute("""
+                SELECT discount_percentage FROM discounts
+                WHERE item_id = %s AND CURDATE() BETWEEN start_date AND end_date
+            """, (item_id,))
+            discount = cursor.fetchone()
+            if discount:
+                discount_percentage = discount[0]
+                discounted_price = round(base_price * (1 - discount_percentage / 100), 2)
+            else:
+                discounted_price = None
+
             if cart:
                 cart_id = cart[0]
-                # Check if the item's restaurant matches the cart's restaurant
-                if cart[1] != item_restaurant[0]:
+                if cart[1] != item_restaurant_id:
                     flash("You can only order from one restaurant at a time. Please complete or cancel your current order before ordering from another restaurant.", "error")
                     return redirect(url_for('customer_cart'))
             else:
-                # Create new cart
                 cursor.execute("""
                     SELECT address_id FROM addresses
                     WHERE user_id = %s AND is_default = TRUE
@@ -279,7 +290,7 @@ def customer_cart():
                 cursor.execute("""
                     INSERT INTO carts (customer_id, restaurant_id, delivery_address_id, status)
                     VALUES (%s, %s, %s, 'preparing')
-                """, (user_id, item_restaurant[0], address_id))
+                """, (user_id, item_restaurant_id, address_id))
                 conn.commit()
                 cart_id = cursor.lastrowid
 
@@ -291,7 +302,6 @@ def customer_cart():
             existing_item = cursor.fetchone()
 
             if existing_item:
-                # Update quantity if item already exists
                 new_quantity = existing_item[0] + quantity
                 cursor.execute("""
                     UPDATE cart_items
@@ -299,15 +309,15 @@ def customer_cart():
                     WHERE cart_id = %s AND item_id = %s
                 """, (new_quantity, cart_id, item_id))
             else:
-                # Add new item to cart
+                # Add new item with discounted_price (can be NULL)
                 cursor.execute("""
-                    INSERT INTO cart_items (cart_id, item_id, quantity)
-                    VALUES (%s, %s, %s)
-                """, (cart_id, item_id, quantity))
+                    INSERT INTO cart_items (cart_id, item_id, quantity, discounted_price)
+                    VALUES (%s, %s, %s, %s)
+                """, (cart_id, item_id, quantity, discounted_price))
 
             conn.commit()
             flash("Item added to cart.", "success")
-            return redirect(request.referrer or url_for('customer_dashboard'))  
+            return redirect(request.referrer or url_for('customer_dashboard'))
 
         except Exception as e:
             conn.rollback()
@@ -368,6 +378,7 @@ def customer_cart():
     finally:
         cursor.close()
         conn.close()
+
 
 
 # update quantity of item route
